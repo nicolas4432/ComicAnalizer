@@ -32,7 +32,8 @@ class ComicNarrativePipeline:
         ordering_config = config.get("ordering", {})
 
         self.ingestor = DirectoryImageIngestor(
-            recursive=ingestion_config.get("recursive", True)
+            recursive=ingestion_config.get("recursive", True),
+            validate_readable=ingestion_config.get("validate_readable", True),
         )
         self.feature_extractor = CompositeFeatureExtractor(config)
         self.scorer = self._build_relation_scorer(relation_config)
@@ -84,6 +85,7 @@ class ComicNarrativePipeline:
         self.graph_builder.build(pages, relations)
         order = self.ordering.order(pages, relations)
         clusters, anomalies = self.validator.validate(pages, relations, order)
+        anomalies.skipped_inputs.extend(self.ingestor.skipped_inputs)
         result = PipelineResult(
             pages=pages,
             relations=relations,

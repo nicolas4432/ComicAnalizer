@@ -142,6 +142,7 @@ class AnomalyReport:
     outliers: list[dict[str, Any]] = field(default_factory=list)
     missing_pages: list[dict[str, Any]] = field(default_factory=list)
     low_confidence_edges: list[dict[str, Any]] = field(default_factory=list)
+    skipped_inputs: list[dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -149,6 +150,7 @@ class AnomalyReport:
             "outliers": self.outliers,
             "missing_pages": self.missing_pages,
             "low_confidence_edges": self.low_confidence_edges,
+            "skipped_inputs": self.skipped_inputs,
         }
 
 
@@ -172,4 +174,3 @@ class PipelineResult:
             "anomalies": self.anomalies.to_dict(),
             "analysis": self.analyzer_results,
         }
-
