@@ -79,16 +79,16 @@ python -m models.train ^
   --learning-rate 0.0003 ^
   --dropout 0.2 ^
   --negatives-per-positive 6 ^
-  --output outputs/learned_relation_model_index_v1.pt ^
-  --metrics-output outputs/learned_relation_metrics_index_v1.json
+  --output outputs/learned_relation_model.pt ^
+  --metrics-output outputs/learned_relation_metrics.json
 ```
 
 Para evaluar ranking full-candidate contra ese mismo indice:
 
 ```bash
 python -m models.evaluate ^
-  --checkpoint outputs/learned_relation_model_index_v1.pt ^
+  --checkpoint outputs/learned_relation_model.pt ^
   --dataset "C:\Users\nico4\Downloads\ComicPruebas\datasets\index.json" ^
   --clip-backend clip ^
-  --output outputs/learned_relation_logical_ranking_index_v1.json
+  --output outputs/learned_relation_ranking.json
 ```

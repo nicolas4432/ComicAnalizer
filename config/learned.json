@@ -9,7 +9,7 @@
   },
   "relation_model": {
     "type": "learned",
-    "checkpoint_path": "outputs/learned_relation_model_index_v1.pt",
+    "checkpoint_path": "outputs/learned_relation_model.pt",
     "device": "auto",
     "top_k_edges": 12
   },
