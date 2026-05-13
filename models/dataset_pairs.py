@@ -18,6 +18,7 @@ SUPPORTED_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", 
 @dataclass(frozen=True)
 class ComicPageRecord:
     dataset: str
+    dataset_dir: Path
     page_key: str
     image_path: Path
     page_id: str
@@ -42,6 +43,7 @@ def load_dataset_records(dataset_dir: str | Path) -> list[ComicPageRecord]:
 
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     dataset_name = str(metadata.get("dataset", dataset_path.name))
+    root_comic_id = str(metadata.get("comic_id", dataset_path.parent.name))
     raw_records = _select_records(metadata)
 
     records: list[ComicPageRecord] = []
@@ -55,13 +57,14 @@ def load_dataset_records(dataset_dir: str | Path) -> list[ComicPageRecord]:
 
         page_type = str(raw.get("type", "comic_page"))
         page_id = str(raw.get("page_id") or raw.get("noise_id") or output_file)
-        comic_id = str(raw.get("comic_id", "comic_a"))
+        comic_id = str(raw.get("comic_id", root_comic_id))
         source_index = raw.get("source_index")
         source_index = int(source_index) if source_index is not None else None
-        page_key = f"{dataset_name}:{comic_id}:{page_id}:{output_file}"
+        page_key = f"{dataset_path}:{comic_id}:{page_id}:{output_file}"
         records.append(
             ComicPageRecord(
                 dataset=dataset_name,
+                dataset_dir=dataset_path,
                 page_key=page_key,
                 image_path=image_path,
                 page_id=page_id,
@@ -75,9 +78,31 @@ def load_dataset_records(dataset_dir: str | Path) -> list[ComicPageRecord]:
 
 def load_many_dataset_records(dataset_dirs: Iterable[str | Path]) -> list[ComicPageRecord]:
     records: list[ComicPageRecord] = []
-    for dataset_dir in dataset_dirs:
+    for dataset_dir in discover_dataset_dirs(dataset_dirs):
         records.extend(load_dataset_records(dataset_dir))
     return records
+
+
+def discover_dataset_dirs(inputs: Iterable[str | Path]) -> list[Path]:
+    """Resolve dataset inputs into concrete directories with metadata.json.
+
+    Supported inputs:
+    - A single dataset directory, e.g. ``.../test_1_clean``.
+    - A comic directory containing test directories and ``manifest.json``.
+    - The global ``datasets/index.json``.
+    - The global ``datasets`` directory containing ``index.json``.
+    - The legacy flat directory containing test directories.
+    """
+
+    discovered: list[Path] = []
+    seen: set[Path] = set()
+    for raw_input in inputs:
+        path = Path(raw_input).expanduser().resolve()
+        for dataset_dir in _discover_dataset_dirs_from_path(path):
+            if dataset_dir not in seen:
+                seen.add(dataset_dir)
+                discovered.append(dataset_dir)
+    return discovered
 
 
 def build_pair_examples(
@@ -162,6 +187,45 @@ def split_examples(
     return shuffled[validation_size:], shuffled[:validation_size]
 
 
+def _discover_dataset_dirs_from_path(path: Path) -> list[Path]:
+    if path.is_file() and path.name == "index.json":
+        return _dataset_dirs_from_index(path)
+    if path.is_dir() and (path / "index.json").exists():
+        return _dataset_dirs_from_index(path / "index.json")
+    if path.is_dir() and (path / "metadata.json").exists():
+        return [path]
+    if path.is_dir():
+        direct = sorted(
+            child
+            for child in path.iterdir()
+            if child.is_dir() and (child / "metadata.json").exists()
+        )
+        if direct:
+            return direct
+        nested = sorted(path.glob("*/metadata.json"))
+        if nested:
+            return [metadata_path.parent for metadata_path in nested]
+    raise FileNotFoundError(f"Could not discover dataset metadata from: {path}")
+
+
+def _dataset_dirs_from_index(index_path: Path) -> list[Path]:
+    index = json.loads(index_path.read_text(encoding="utf-8"))
+    dataset_dirs: list[Path] = []
+    for comic in index.get("comics", []):
+        output_dir = Path(comic["output_dir"]).expanduser().resolve()
+        manifest_path = output_dir / "manifest.json"
+        if manifest_path.exists():
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            dataset_image_counts = manifest.get("dataset_image_counts", {})
+        else:
+            dataset_image_counts = comic.get("dataset_image_counts", {})
+        for dataset_name in sorted(dataset_image_counts):
+            dataset_dir = output_dir / dataset_name
+            if (dataset_dir / "metadata.json").exists():
+                dataset_dirs.append(dataset_dir)
+    return dataset_dirs
+
+
 def _select_records(metadata: dict) -> list[dict]:
     if metadata.get("shuffled_order"):
         return list(metadata["shuffled_order"])
@@ -178,7 +242,10 @@ def _select_records(metadata: dict) -> list[dict]:
                 record = dict(variant)
                 record["page_id"] = page_id
                 record["source_index"] = source.get("source_index")
-                record["comic_id"] = source.get("comic_id", "comic_a")
+                record["comic_id"] = record.get(
+                    "comic_id",
+                    source.get("comic_id", metadata.get("comic_id")),
+                )
                 record["type"] = "comic_page"
                 variation_records.append(record)
         if variation_records:

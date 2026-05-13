@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 from models.dataset_pairs import (
     PairFeatureDataset,
     build_pair_examples,
+    discover_dataset_dirs,
     load_many_dataset_records,
     split_examples,
 )
@@ -27,7 +28,10 @@ def parse_args() -> argparse.Namespace:
         "--dataset",
         action="append",
         required=True,
-        help="Dataset directory containing images and metadata.json. Repeat for multiple datasets.",
+        help=(
+            "Dataset input. Accepts a metadata dataset dir, a comic dir, "
+            "datasets/index.json, or the datasets root. Repeat as needed."
+        ),
     )
     parser.add_argument("--cache-dir", default=".cache/clip_embeddings")
     parser.add_argument("--output", default="outputs/learned_relation_model.pt")
@@ -53,7 +57,8 @@ def main() -> None:
         "cuda" if args.device == "auto" and torch.cuda.is_available() else ("cpu" if args.device == "auto" else args.device)
     )
 
-    records = load_many_dataset_records(args.dataset)
+    dataset_dirs = discover_dataset_dirs(args.dataset)
+    records = load_many_dataset_records(dataset_dirs)
     if not records:
         raise RuntimeError("No image records were loaded from the requested datasets.")
 
@@ -158,7 +163,8 @@ def main() -> None:
     )
 
     report = {
-        "datasets": [str(Path(dataset).resolve()) for dataset in args.dataset],
+        "inputs": [str(Path(dataset).resolve()) for dataset in args.dataset],
+        "datasets": [str(dataset_dir) for dataset_dir in dataset_dirs],
         "records": len(records),
         "pairs": len(examples),
         "train_pairs": len(train_examples),

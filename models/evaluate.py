@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from models.dataset_pairs import load_many_dataset_records
+from models.dataset_pairs import discover_dataset_dirs, load_many_dataset_records
 from models.feature_extractor import ClipEmbeddingExtractor, build_directional_pair_features
 from models.pairwise_model import LearnedRelationModel
 
@@ -16,7 +16,15 @@ def parse_args() -> argparse.Namespace:
         description="Evaluate a learned transition model with full-candidate ranking."
     )
     parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--dataset", action="append", required=True)
+    parser.add_argument(
+        "--dataset",
+        action="append",
+        required=True,
+        help=(
+            "Dataset input. Accepts a metadata dataset dir, a comic dir, "
+            "datasets/index.json, or the datasets root. Repeat as needed."
+        ),
+    )
     parser.add_argument("--clip-backend", default="clip")
     parser.add_argument("--cache-dir", default=".cache/clip_embeddings")
     parser.add_argument("--output", default="outputs/learned_relation_ranking_eval.json")
@@ -25,7 +33,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    records = load_many_dataset_records(args.dataset)
+    dataset_dirs = discover_dataset_dirs(args.dataset)
+    records = load_many_dataset_records(dataset_dirs)
 
     clip_extractor = ClipEmbeddingExtractor(
         backend=args.clip_backend,
@@ -102,7 +111,8 @@ def main() -> None:
 
     report = {
         "checkpoint": str(Path(args.checkpoint).resolve()),
-        "datasets": [str(Path(dataset).resolve()) for dataset in args.dataset],
+        "inputs": [str(Path(dataset).resolve()) for dataset in args.dataset],
+        "datasets": [str(dataset_dir) for dataset_dir in dataset_dirs],
         "overall": {
             "transitions": total,
             "top1_accuracy": total_top1 / max(1, total),

@@ -65,3 +65,30 @@ python -m models.train ^
 ```
 
 Para entrenar con todos los escenarios, repite `--dataset` por cada carpeta.
+
+Si existe un indice global generado por `dataset_builder.py`, tambien puedes
+entrenar directamente desde `datasets/index.json`; el loader descubre todos los
+comics y escenarios declarados en `datasets/by_comic/<comic_slug>/manifest.json`:
+
+```bash
+python -m models.train ^
+  --dataset "C:\Users\nico4\Downloads\ComicPruebas\datasets\index.json" ^
+  --clip-backend clip ^
+  --epochs 50 ^
+  --batch-size 64 ^
+  --learning-rate 0.0003 ^
+  --dropout 0.2 ^
+  --negatives-per-positive 6 ^
+  --output outputs/learned_relation_model_index_v1.pt ^
+  --metrics-output outputs/learned_relation_metrics_index_v1.json
+```
+
+Para evaluar ranking full-candidate contra ese mismo indice:
+
+```bash
+python -m models.evaluate ^
+  --checkpoint outputs/learned_relation_model_index_v1.pt ^
+  --dataset "C:\Users\nico4\Downloads\ComicPruebas\datasets\index.json" ^
+  --clip-backend clip ^
+  --output outputs/learned_relation_logical_ranking_index_v1.json
+```
