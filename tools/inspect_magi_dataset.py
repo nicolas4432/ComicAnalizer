@@ -44,6 +44,11 @@ def parse_args() -> argparse.Namespace:
         help="Treat --input as datasets/by_comic and select one page per comic.",
     )
     parser.add_argument(
+        "--all-pages-per-comic",
+        action="store_true",
+        help="Treat --input as datasets/by_comic and inspect every page in each selected comic.",
+    )
+    parser.add_argument(
         "--max-comics",
         type=int,
         default=0,
@@ -75,6 +80,12 @@ def parse_args() -> argparse.Namespace:
 
 def discover_images(args: argparse.Namespace) -> list[tuple[str, Path]]:
     root = Path(args.input).expanduser().resolve()
+    if args.all_pages_per_comic:
+        return discover_pages_per_comic(
+            root=root,
+            dataset_name=args.dataset_name,
+            max_comics=args.max_comics,
+        )
     if args.sample_one_per_comic:
         return discover_one_per_comic(
             root=root,
@@ -119,6 +130,33 @@ def discover_one_per_comic(
         if not images:
             continue
         selected.append((comic_dir.name, select_image(images, selection, seed, comic_dir.name)))
+    return selected
+
+
+def discover_pages_per_comic(
+    root: Path,
+    dataset_name: str,
+    max_comics: int = 0,
+) -> list[tuple[str, Path]]:
+    if not root.exists():
+        raise FileNotFoundError(f"Input path does not exist: {root}")
+
+    selected: list[tuple[str, Path]] = []
+    copied_comics = 0
+    for comic_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        if max_comics > 0 and copied_comics >= max_comics:
+            break
+        dataset_dir = comic_dir / dataset_name
+        if not dataset_dir.exists():
+            continue
+        images = sorted(
+            (path for path in dataset_dir.iterdir() if is_supported_image(path)),
+            key=lambda path: path.name.lower(),
+        )
+        if not images:
+            continue
+        selected.extend((comic_dir.name, image) for image in images)
+        copied_comics += 1
     return selected
 
 
@@ -267,6 +305,7 @@ def main() -> None:
         "selection": args.selection,
         "dataset_name": args.dataset_name,
         "sample_one_per_comic": args.sample_one_per_comic,
+        "all_pages_per_comic": args.all_pages_per_comic,
         "page_count": len(results),
         "cache_hits": sum(1 for item in metrics if item["cache_hit"]),
         "cache_misses": sum(1 for item in metrics if not item["cache_hit"]),

@@ -34,6 +34,24 @@ outputs/magi_cloud_sample.zip
 
 Ese ZIP queda fuera de Git porque `outputs/` esta ignorado. Es lo recomendado si los comics son privados, pesados, con copyright o contenido sensible.
 
+Para preparar todos los comics limpios completos:
+
+```powershell
+python -m tools.export_magi_cloud_sample `
+  --by-comic-root "C:\Users\nico4\Downloads\ComicPruebas\datasets\by_comic" `
+  --dataset-name test_1_clean `
+  --all-pages `
+  --max-comics 0 `
+  --output-dir outputs\magi_clean_full `
+  --zip-path outputs\magi_clean_full.zip
+```
+
+Esto crea:
+
+```text
+outputs/magi_clean_full.zip
+```
+
 ## 1. Activar GPU En Colab
 
 En Colab:
@@ -135,6 +153,45 @@ por:
 ```
 
 pero no esperes que entre en 5 minutos.
+
+## 5B. Ejecutar Todos Los Comics Limpios Sin OCR
+
+Usa esta version cuando subas `magi_clean_full.zip`. Procesa todas las paginas
+de `test_1_clean` en todos los comics incluidos en el ZIP.
+
+```python
+%cd /content/ComicAnalizer
+
+!python -m tools.inspect_magi_dataset \
+  --input /content/magi_sample/magi_clean_full/by_comic \
+  --output-dir outputs/magi_debug/colab_clean_full_detections \
+  --all-pages-per-comic \
+  --dataset-name test_1_clean \
+  --task detections \
+  --cache-dir outputs/magi_cache \
+  --device cuda \
+  --dtype float16 \
+  --max-comics 0
+```
+
+Si quieres probar el flujo completo pero sin gastar toda la sesion de Colab,
+limita primero a 1 o 2 comics:
+
+```python
+!python -m tools.inspect_magi_dataset \
+  --input /content/magi_sample/magi_clean_full/by_comic \
+  --output-dir outputs/magi_debug/colab_clean_two_comics_detections \
+  --all-pages-per-comic \
+  --dataset-name test_1_clean \
+  --task detections \
+  --cache-dir outputs/magi_cache \
+  --device cuda \
+  --dtype float16 \
+  --max-comics 2
+```
+
+Para una corrida larga conviene guardar resultados en Drive o descargar el ZIP
+final, porque el runtime de Colab se puede reiniciar.
 
 ## 6. Leer Metricas
 

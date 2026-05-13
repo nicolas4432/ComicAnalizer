@@ -12,7 +12,7 @@ from utils.images import is_supported_image
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create a small Magi sample ZIP from clean by_comic datasets."
+        description="Create a Magi ZIP from clean by_comic datasets for cloud tests."
     )
     parser.add_argument(
         "--by-comic-root",
@@ -27,12 +27,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         default="outputs/magi_cloud_sample",
-        help="Folder where the sample dataset will be assembled.",
+        help="Folder where the cloud dataset will be assembled.",
     )
     parser.add_argument(
         "--zip-path",
         default="outputs/magi_cloud_sample.zip",
         help="ZIP path to create for Colab upload.",
+    )
+    parser.add_argument(
+        "--all-pages",
+        action="store_true",
+        help="Copy every page from each selected clean dataset instead of one sampled page.",
     )
     parser.add_argument(
         "--selection",
@@ -44,7 +49,7 @@ def parse_args() -> argparse.Namespace:
         "--max-comics",
         type=int,
         default=8,
-        help="Maximum comics to include. Use a small value for quick cloud tests.",
+        help="Maximum comics to include. 0 means all comics.",
     )
     parser.add_argument("--seed", type=int, default=17, help="Random selection seed.")
     return parser.parse_args()
@@ -63,18 +68,18 @@ def main() -> None:
         shutil.rmtree(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    sample_root = output_dir / "by_comic"
     manifest: dict[str, object] = {
         "source_root": str(root),
         "dataset_name": args.dataset_name,
+        "all_pages": args.all_pages,
         "selection": args.selection,
         "max_comics": args.max_comics,
         "pages": [],
     }
 
+    copied_comics = 0
     for comic_dir in sorted(path for path in root.iterdir() if path.is_dir()):
-        pages = manifest["pages"]
-        if isinstance(pages, list) and args.max_comics > 0 and len(pages) >= args.max_comics:
+        if args.max_comics > 0 and copied_comics >= args.max_comics:
             break
 
         dataset_dir = comic_dir / args.dataset_name
@@ -88,22 +93,19 @@ def main() -> None:
         if not images:
             continue
 
-        selected = select_image(images, args.selection, args.seed, comic_dir.name)
-        relative_target = Path("by_comic") / comic_dir.name / args.dataset_name / selected.name
-        target = output_dir / relative_target
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(selected, target)
-
-        if isinstance(pages, list):
-            pages.append(
-                {
-                    "comic_id": comic_dir.name,
-                    "dataset": args.dataset_name,
-                    "selection": args.selection,
-                    "source_path": str(selected),
-                    "relative_path": relative_target.as_posix(),
-                }
+        selected_images = images if args.all_pages else [
+            select_image(images, args.selection, args.seed, comic_dir.name)
+        ]
+        for selected in selected_images:
+            copy_image(
+                source=selected,
+                output_dir=output_dir,
+                comic_id=comic_dir.name,
+                dataset_name=args.dataset_name,
+                manifest=manifest,
+                selection="all" if args.all_pages else args.selection,
             )
+        copied_comics += 1
 
     pages = manifest["pages"]
     if not isinstance(pages, list) or not pages:
@@ -128,12 +130,40 @@ def main() -> None:
                 "sample_dir": str(output_dir),
                 "zip_path": str(zip_path),
                 "page_count": len(pages),
+                "comic_count": copied_comics,
+                "all_pages": args.all_pages,
                 "pages": pages,
             },
             indent=2,
             ensure_ascii=False,
         )
     )
+
+
+def copy_image(
+    source: Path,
+    output_dir: Path,
+    comic_id: str,
+    dataset_name: str,
+    manifest: dict[str, object],
+    selection: str,
+) -> None:
+    relative_target = Path("by_comic") / comic_id / dataset_name / source.name
+    target = output_dir / relative_target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+
+    pages = manifest["pages"]
+    if isinstance(pages, list):
+        pages.append(
+            {
+                "comic_id": comic_id,
+                "dataset": dataset_name,
+                "selection": selection,
+                "source_path": str(source),
+                "relative_path": relative_target.as_posix(),
+            }
+        )
 
 
 if __name__ == "__main__":
