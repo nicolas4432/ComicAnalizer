@@ -1,0 +1,25 @@
+{
+  "features": {
+    "clip": {
+      "backend": "clip",
+      "model_name": "ViT-B/32",
+      "device": "auto",
+      "allow_opencv_fallback": false
+    }
+  },
+  "relation_model": {
+    "type": "learned",
+    "checkpoint_path": "outputs/learned_relation_model_index_v1.pt",
+    "device": "auto",
+    "top_k_edges": 12
+  },
+  "ordering": {
+    "strategy": "beam",
+    "beam_width": 128,
+    "low_confidence_threshold": 0.45
+  },
+  "output": {
+    "include_embeddings": false,
+    "pretty": true
+  }
+}

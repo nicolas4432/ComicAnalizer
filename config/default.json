@@ -22,6 +22,7 @@
     }
   },
   "relation_model": {
+    "type": "heuristic",
     "visual_weight": 0.7,
     "text_weight": 0.2,
     "metadata_weight": 0.1,
@@ -32,6 +33,7 @@
   },
   "ordering": {
     "strategy": "greedy",
+    "beam_width": 128,
     "low_confidence_threshold": 0.45
   },
   "validation": {
