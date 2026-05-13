@@ -164,12 +164,28 @@ class PipelineResult:
     analyzer_results: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self, include_embeddings: bool = True) -> dict[str, Any]:
+        pages_by_id = {page.page_id: page for page in self.pages}
+        ordered_pages = []
+        for position, page_id in enumerate(self.order, 1):
+            page = pages_by_id.get(page_id)
+            if page is None:
+                continue
+            ordered_pages.append(
+                {
+                    "position": position,
+                    "id": page.page_id,
+                    "path": page.path,
+                    "sha256": page.sha256,
+                }
+            )
+
         return {
             "pages": [
                 page.to_dict(include_embeddings=include_embeddings) for page in self.pages
             ],
             "relations": [relation.to_dict() for relation in self.relations],
             "order": self.order,
+            "ordered_pages": ordered_pages,
             "clusters": [cluster.to_dict() for cluster in self.clusters],
             "anomalies": self.anomalies.to_dict(),
             "analysis": self.analyzer_results,

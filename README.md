@@ -24,7 +24,7 @@ El pipeline esta separado en modulos reemplazables:
 - Grafo narrativo dirigido con NetworkX.
 - Ordenamiento global greedy inicial sin ciclos.
 - Deteccion inicial de duplicados, outliers, gaps y clusters.
-- Output JSON con `pages`, `relations`, `clusters`, `anomalies`, `order` y `analysis`.
+- Output JSON con `pages`, `ordered_pages`, `relations`, `clusters`, `anomalies`, `order` y `analysis`.
 
 ## Uso
 
@@ -38,6 +38,25 @@ Para evitar guardar vectores completos en el JSON:
 ```bash
 python main.py --input ./imagenes --output ./outputs/narrative_order.json --no-embeddings
 ```
+
+Para generar el JSON y, en el mismo proceso, exportar una carpeta con las
+paginas copiadas y renombradas en el orden predicho por el modelo:
+
+```bash
+python main.py ^
+  --input "C:\ruta\comic_desordenado" ^
+  --output outputs/comic_order.json ^
+  --config config/learned.json ^
+  --no-embeddings ^
+  --export-ordered-dir outputs/ordered_comics/comic ^
+  --overwrite-export ^
+  --export-order-source model ^
+  --export-name-mode numbered
+```
+
+`ordered_pages` es la vista clara del orden narrativo predicho. `pages` conserva
+la lista de paginas cargadas desde la carpeta de entrada, que puede coincidir o
+no con el orden final.
 
 ## Decision clave
 
