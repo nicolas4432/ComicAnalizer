@@ -1,0 +1,47 @@
+{
+  "ingestion": {
+    "recursive": true
+  },
+  "features": {
+    "clip": {
+      "backend": "auto",
+      "model_name": "ViT-B/32",
+      "transformers_model_name": "openai/clip-vit-base-patch32",
+      "device": "auto",
+      "allow_opencv_fallback": true
+    },
+    "ocr": {
+      "enabled": false
+    },
+    "text_embeddings": {
+      "enabled": false,
+      "model_name": "sentence-transformers/all-MiniLM-L6-v2"
+    },
+    "layout": {
+      "enabled": false
+    }
+  },
+  "relation_model": {
+    "visual_weight": 0.7,
+    "text_weight": 0.2,
+    "metadata_weight": 0.1,
+    "target_visual_delta": 0.35,
+    "duplicate_penalty_delta": 0.04,
+    "min_edge_score": 0.0,
+    "top_k_edges": 8
+  },
+  "ordering": {
+    "strategy": "greedy",
+    "low_confidence_threshold": 0.45
+  },
+  "validation": {
+    "duplicate_similarity_threshold": 0.985,
+    "outlier_quantile": 0.1,
+    "cluster_similarity_threshold": 0.72,
+    "missing_page_threshold": 0.35
+  },
+  "output": {
+    "include_embeddings": true,
+    "pretty": true
+  }
+}
