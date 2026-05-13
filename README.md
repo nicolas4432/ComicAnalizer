@@ -1,32 +1,55 @@
 # ComicAnalizer
 
-Sistema modular para reconstruir el orden narrativo de paginas de comic a partir de imagenes desordenadas.
+Sistema modular para reconstruir el orden narrativo de paginas de comic a
+partir de imagenes desordenadas.
+
+El objetivo final no es ordenar por nombre de archivo ni por OCR simple. El
+sistema busca aprender una probabilidad direccional:
+
+```text
+P(A -> B) = probabilidad de que la pagina B venga despues de la pagina A
+```
+
+## Estado Actual
+
+El proyecto ya tiene una base funcional:
+
+- Ingesta de imagenes desde carpetas.
+- Validacion de archivos ilegibles.
+- Extraccion de metadata con OpenCV.
+- Extraccion de embeddings visuales globales con CLIP.
+- Modelo heuristico reemplazable.
+- Modelo entrenable direccional en PyTorch.
+- Construccion de grafo narrativo con NetworkX.
+- Ordenamiento greedy y beam search.
+- Validacion basica de duplicados, outliers, gaps y clusters.
+- Output JSON con `pages`, `ordered_pages`, `relations`, `clusters`,
+  `anomalies`, `order` y `analysis`.
+- Exportacion de una carpeta con paginas copiadas y renombradas en el orden
+  predicho.
+- Primera prueba experimental de Magi v3 para detectar paneles, textos,
+  personajes, asociaciones y OCR.
+
+La limitacion principal actual es que el modelo entrenable aprende sobre
+embeddings CLIP de pagina completa. Esto sirve como base, pero todavia no
+equivale a comprender narrativa de vinetas, globos de texto, personajes y
+continuidad interna.
 
 ## Arquitectura
 
 El pipeline esta separado en modulos reemplazables:
 
-1. `core/ingestion.py`: descubre imagenes y calcula ids/hashes.
-2. `features/`: extrae metadata, embeddings visuales CLIP, OCR/texto y layout.
-3. `models/relation_model.py`: calcula `score(A, B)` como probabilidad de transicion narrativa.
-4. `graph/`: crea el grafo dirigido, ordena y valida.
+1. `core/ingestion.py`: descubre imagenes, valida lectura y calcula ids/hashes.
+2. `features/`: extrae metadata, embeddings visuales, OCR/texto, layout y
+   futuros features estructurales.
+3. `models/`: modelos de transicion `score(A, B)`.
+4. `graph/`: construccion de grafo, ordenamiento y validacion.
 5. `analyzers/`: plugins read-only con interfaz `Analyzer.run(data)`.
-6. `reports/`: serializa el output estructurado.
-7. `main.py`: CLI de orquestacion.
+6. `reports/`: serializa JSON y exporta paginas ordenadas.
+7. `tools/`: herramientas experimentales de inspeccion.
+8. `main.py`: CLI de orquestacion.
 
-## Primer objetivo implementado
-
-- Carga de imagenes desde archivo o directorio.
-- Extraccion de metadata con OpenCV.
-- Extraccion de embedding visual con CLIP usando backend `clip` o `transformers`.
-- Fallback opcional a embedding visual OpenCV si CLIP no esta instalado.
-- Calculo de similitud y score dirigido `A -> B`.
-- Grafo narrativo dirigido con NetworkX.
-- Ordenamiento global greedy inicial sin ciclos.
-- Deteccion inicial de duplicados, outliers, gaps y clusters.
-- Output JSON con `pages`, `ordered_pages`, `relations`, `clusters`, `anomalies`, `order` y `analysis`.
-
-## Uso
+## Uso Basico
 
 ```bash
 pip install -r requirements.txt
@@ -58,36 +81,19 @@ python main.py ^
 la lista de paginas cargadas desde la carpeta de entrada, que puede coincidir o
 no con el orden final.
 
-## Decision clave
-
-El modelo inicial es heuristico para mantener el sistema funcional desde el primer paso. La frontera de reemplazo es `HeuristicTransitionScorer.score(A, B)`: en una siguiente fase puede sustituirse por un modelo entrenado con pares positivos/negativos sin tocar ingestion, features, grafo, ordenamiento, validacion ni reportes.
-
-## Entrenamiento direccional
+## Entrenamiento Direccional
 
 El modelo entrenable vive en `models/`:
 
-- `feature_extractor.py`: CLIP real con cache de embeddings; no usa fallback OpenCV.
+- `feature_extractor.py`: CLIP real con cache de embeddings; no usa fallback
+  OpenCV.
 - `dataset_pairs.py`: carga `metadata.json` y genera pares positivos/negativos.
-- `pairwise_model.py`: MLP direccional sobre `[emb_A, emb_B, emb_B - emb_A, abs(emb_B - emb_A)]`.
+- `pairwise_model.py`: MLP direccional sobre
+  `[emb_A, emb_B, emb_B - emb_A, abs(emb_B - emb_A)]`.
 - `train.py`: entrenamiento y evaluacion.
+- `evaluate.py`: evaluacion ranking full-candidate.
 
-Ejemplo con `test_1_clean`:
-
-```bash
-python -m models.train ^
-  --dataset "C:\Users\nico4\Downloads\ComicPruebas\datasets\test_1_clean" ^
-  --clip-backend clip ^
-  --epochs 20 ^
-  --batch-size 8 ^
-  --output outputs/learned_relation_model.pt ^
-  --metrics-output outputs/learned_relation_metrics.json
-```
-
-Para entrenar con todos los escenarios, repite `--dataset` por cada carpeta.
-
-Si existe un indice global generado por `dataset_builder.py`, tambien puedes
-entrenar directamente desde `datasets/index.json`; el loader descubre todos los
-comics y escenarios declarados en `datasets/by_comic/<comic_slug>/manifest.json`:
+Ejemplo desde un indice global:
 
 ```bash
 python -m models.train ^
@@ -102,7 +108,7 @@ python -m models.train ^
   --metrics-output outputs/learned_relation_metrics.json
 ```
 
-Para evaluar ranking full-candidate contra ese mismo indice:
+Para evaluar ranking:
 
 ```bash
 python -m models.evaluate ^
@@ -111,3 +117,27 @@ python -m models.evaluate ^
   --clip-backend clip ^
   --output outputs/learned_relation_ranking.json
 ```
+
+## Prueba Experimental Con Magi
+
+Se agrego una herramienta experimental para inspeccionar Magi v3:
+
+```bash
+python -m tools.inspect_magi_dataset ^
+  --input "C:\ruta\dataset\test_1_clean" ^
+  --output-dir outputs/magi_debug/comic_sample ^
+  --limit 1 ^
+  --device cpu ^
+  --dtype float32
+```
+
+En la primera prueba, Magi logro detectar textos, personajes, asociaciones y OCR
+en portadas. En una pagina interior compleja detecto textos, personajes y colas
+de globos, pero marco la pagina como un solo panel. Por eso Magi es una base
+valiosa, pero todavia necesita complementarse con deteccion de vinetas mas
+robusta y postprocesamiento propio.
+
+Ver detalles en [PROJECT_ROADMAP.md](PROJECT_ROADMAP.md).
+
+Para probar Magi en Colab Free con GPU y una muestra pequena de paginas limpias,
+ver [COLAB_MAGI_QUICKTEST.md](COLAB_MAGI_QUICKTEST.md).
