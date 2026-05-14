@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output",
-        default="outputs/magi_analysis_report.json",
+        default="outputs/analysis/magi_analysis_report.json",
         help="Structured analysis report path.",
     )
     parser.add_argument(

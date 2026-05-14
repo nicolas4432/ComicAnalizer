@@ -125,7 +125,7 @@ Se agrego una herramienta experimental para inspeccionar Magi v3:
 ```bash
 python -m tools.inspect_magi_dataset ^
   --input "C:\ruta\dataset\test_1_clean" ^
-  --output-dir outputs/magi_debug/comic_sample ^
+  --output-dir outputs/runs/comic_sample/magi ^
   --limit 1 ^
   --device cpu ^
   --dtype float32
@@ -146,6 +146,47 @@ Para correr el flujo completo Magi + reporte de calidad + comparacion
 PaddleOCR, abrir [notebooks/MAGI_ANALYSIS_COLAB.ipynb](notebooks/MAGI_ANALYSIS_COLAB.ipynb)
 en Colab.
 
+Si ya tienes resultados Magi y solo quieres probar OCR complementario, abrir
+[notebooks/OCR_COMPARISON_COLAB.ipynb](notebooks/OCR_COMPARISON_COLAB.ipynb).
+
+## Estandar De Outputs
+
+Las nuevas herramientas escriben salidas en este esquema:
+
+```text
+outputs/
+  packages/              # ZIPs/datasets preparados para Colab
+  cache/magi/            # cache de inferencias Magi
+  analysis/              # reportes sueltos locales
+  runs/<run_name>/       # salida consolidada de una corrida
+    manifest.json
+    magi/
+      magi_results.json
+      metrics.json
+      summary.json
+    analysis/
+      magi_analysis_report.json
+      paddle_magi_ocr_comparison.json
+    visuals/
+      magi_boxes/<comic_id>/  # paginas completas con cajas Magi
+      ocr_boxes/<comic_id>/   # paginas completas con cajas PaddleOCR
+```
+
+La separacion por `comic_id` permite comparar visualmente dos comics sin mezclar
+paginas ni overlays. Los JSON tambien conservan `comic_id`, `file_name`,
+`page_id` y `path` para enlazar cada resultado visual con sus datos crudos.
+
+Los resultados historicos en `outputs/magi_debug/*` se consideran legado de
+pruebas. Para consolidarlos:
+
+```bash
+python -m tools.standardize_magi_outputs ^
+  --magi-input "C:\Users\nico4\Downloads\magi_colab_full_results.zip" ^
+  --ocr-comparison outputs/analysis/paddle_magi_ocr_comparison.json ^
+  --image-root "C:\Users\nico4\Downloads\ComicPruebas\datasets\by_comic" ^
+  --run-name colab_clean_full
+```
+
 ## Analisis De Resultados Magi
 
 Un ZIP descargado desde Colab se puede convertir en un reporte normalizado:
@@ -153,7 +194,7 @@ Un ZIP descargado desde Colab se puede convertir en un reporte normalizado:
 ```bash
 python -m tools.analyze_magi_results ^
   --input "C:\Users\nico4\Downloads\magi_colab_full_results.zip" ^
-  --output outputs/magi_analysis_report.json
+  --output outputs/analysis/magi_analysis_report.json
 ```
 
 Para comparar una muestra de paginas contra PaddleOCR:
@@ -165,7 +206,8 @@ python -m tools.compare_magi_paddleocr ^
   --dataset-name test_1_clean ^
   --selection random ^
   --limit 3 ^
-  --output outputs/paddle_magi_ocr_comparison.json
+  --visual-output-dir outputs/runs/ocr_sample/visuals/ocr_boxes ^
+  --output outputs/analysis/paddle_magi_ocr_comparison.json
 ```
 
 En Windows CPU, PaddleOCR puede ser muy lento. Para pruebas de mayor tamano,

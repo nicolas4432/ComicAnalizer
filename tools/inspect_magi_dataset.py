@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from features.magi_extractor import MagiPageExtractor, save_magi_results
+from reports.box_visualization import sanitize_filename, visual_comic_dir, visual_page_name
 from utils.images import is_supported_image
 
 
@@ -17,6 +18,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--input", required=True, help="Image file, comic dir, or by_comic root.")
     parser.add_argument("--output-dir", required=True, help="Directory for debug output.")
+    parser.add_argument(
+        "--visual-output-dir",
+        default=None,
+        help="Optional directory for page-level box overlays. Defaults to --output-dir.",
+    )
     parser.add_argument("--limit", type=int, default=2, help="Maximum pages for direct directory mode.")
     parser.add_argument("--device", default="auto", help="auto, cpu, cuda, etc.")
     parser.add_argument(
@@ -55,19 +61,30 @@ def parse_args() -> argparse.Namespace:
         help="Maximum comics to inspect in --sample-one-per-comic mode. 0 means all.",
     )
     parser.add_argument(
+        "--comic-id",
+        action="append",
+        default=[],
+        help="Only inspect this comic id. Can be repeated.",
+    )
+    parser.add_argument(
         "--dataset-name",
         default="test_1_clean",
         help="Dataset folder to use with --sample-one-per-comic.",
     )
     parser.add_argument(
         "--cache-dir",
-        default="outputs/magi_cache",
+        default="outputs/cache/magi",
         help="Cache directory for Magi outputs keyed by image hash and task.",
     )
     parser.add_argument(
         "--force",
         action="store_true",
         help="Ignore existing cache and recompute Magi outputs.",
+    )
+    parser.add_argument(
+        "--no-panel-crops",
+        action="store_true",
+        help="Only save full-page box overlays, not panel crop folders.",
     )
     parser.add_argument(
         "--seed",
@@ -80,11 +97,13 @@ def parse_args() -> argparse.Namespace:
 
 def discover_images(args: argparse.Namespace) -> list[tuple[str, Path]]:
     root = Path(args.input).expanduser().resolve()
+    comic_ids = set(args.comic_id or [])
     if args.all_pages_per_comic:
         return discover_pages_per_comic(
             root=root,
             dataset_name=args.dataset_name,
             max_comics=args.max_comics,
+            comic_ids=comic_ids,
         )
     if args.sample_one_per_comic:
         return discover_one_per_comic(
@@ -93,6 +112,7 @@ def discover_images(args: argparse.Namespace) -> list[tuple[str, Path]]:
             selection=args.selection,
             seed=args.seed,
             max_comics=args.max_comics,
+            comic_ids=comic_ids,
         )
     if root.is_file():
         images = [root] if is_supported_image(root) else []
@@ -112,12 +132,15 @@ def discover_one_per_comic(
     selection: str,
     seed: int,
     max_comics: int = 0,
+    comic_ids: set[str] | None = None,
 ) -> list[tuple[str, Path]]:
     if not root.exists():
         raise FileNotFoundError(f"Input path does not exist: {root}")
 
     selected: list[tuple[str, Path]] = []
     for comic_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        if comic_ids and comic_dir.name not in comic_ids:
+            continue
         if max_comics > 0 and len(selected) >= max_comics:
             break
         dataset_dir = comic_dir / dataset_name
@@ -137,6 +160,7 @@ def discover_pages_per_comic(
     root: Path,
     dataset_name: str,
     max_comics: int = 0,
+    comic_ids: set[str] | None = None,
 ) -> list[tuple[str, Path]]:
     if not root.exists():
         raise FileNotFoundError(f"Input path does not exist: {root}")
@@ -144,6 +168,8 @@ def discover_pages_per_comic(
     selected: list[tuple[str, Path]] = []
     copied_comics = 0
     for comic_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        if comic_ids and comic_dir.name not in comic_ids:
+            continue
         if max_comics > 0 and copied_comics >= max_comics:
             break
         dataset_dir = comic_dir / dataset_name
@@ -257,6 +283,12 @@ def main() -> None:
 
     output_dir = Path(args.output_dir).expanduser().resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    visual_output_dir = (
+        Path(args.visual_output_dir).expanduser().resolve()
+        if args.visual_output_dir
+        else output_dir
+    )
+    visual_output_dir.mkdir(parents=True, exist_ok=True)
     cache_dir = Path(args.cache_dir).expanduser().resolve()
     selected_images = discover_images(args)
     if not selected_images:
@@ -281,18 +313,22 @@ def main() -> None:
         results.append(result)
         metrics.append(item_metrics)
 
-        stem = f"{index:03d}_{comic_id}_{image_path.stem}"
+        stem = f"{index:03d}_{sanitize_filename(comic_id)}_{sanitize_filename(image_path.stem)}"
         if "detections" in result:
             extractor.visualise(
                 image_path=image_path,
                 result=result,
-                output_path=output_dir / f"{stem}_boxes.jpg",
+                output_path=visual_comic_dir(visual_output_dir, comic_id)
+                / visual_page_name(image_path.name, "magi_boxes"),
             )
-            panel_count = extractor.crop_panels(
-                image_path=image_path,
-                result=result,
-                output_dir=output_dir / stem,
-            )
+            if args.no_panel_crops:
+                panel_count = 0
+            else:
+                panel_count = extractor.crop_panels(
+                    image_path=image_path,
+                    result=result,
+                    output_dir=output_dir / stem,
+                )
         else:
             panel_count = 0
         summary = summarise_result(result, item_metrics)
@@ -304,8 +340,11 @@ def main() -> None:
         "task": args.task,
         "selection": args.selection,
         "dataset_name": args.dataset_name,
+        "comic_ids": args.comic_id,
         "sample_one_per_comic": args.sample_one_per_comic,
         "all_pages_per_comic": args.all_pages_per_comic,
+        "visual_output_dir": str(visual_output_dir),
+        "panel_crops_enabled": not args.no_panel_crops,
         "page_count": len(results),
         "cache_hits": sum(1 for item in metrics if item["cache_hit"]),
         "cache_misses": sum(1 for item in metrics if not item["cache_hit"]),

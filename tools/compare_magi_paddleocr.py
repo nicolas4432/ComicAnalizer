@@ -11,6 +11,11 @@ from features.ocr_paddle import (
     PaddleOCRComplementaryExtractor,
     compare_magi_with_paddle,
 )
+from reports.box_visualization import (
+    draw_paddle_ocr_readable_overlay_from_dict,
+    visual_comic_dir,
+    visual_page_name,
+)
 from tools.analyze_magi_results import load_magi_bundle, normalize_pages
 
 
@@ -29,9 +34,20 @@ def parse_args() -> argparse.Namespace:
         help="Root containing by_comic/<comic>/<dataset>/<image> or the by_comic folder itself.",
     )
     parser.add_argument("--dataset-name", default="test_1_clean")
-    parser.add_argument("--output", default="outputs/paddle_magi_ocr_comparison.json")
+    parser.add_argument("--output", default="outputs/analysis/paddle_magi_ocr_comparison.json")
+    parser.add_argument(
+        "--visual-output-dir",
+        default=None,
+        help="Optional directory for PaddleOCR text box overlays.",
+    )
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--seed", type=int, default=23)
+    parser.add_argument(
+        "--comic-id",
+        action="append",
+        default=[],
+        help="Only OCR pages from this comic id. Can be repeated.",
+    )
     parser.add_argument(
         "--selection",
         default="random",
@@ -52,11 +68,21 @@ def main() -> None:
     args = parse_args()
     bundle = load_magi_bundle(Path(args.magi_input).expanduser())
     pages = normalize_pages(bundle)
+    if args.comic_id:
+        comic_ids = set(args.comic_id)
+        pages = [page for page in pages if page.comic_id in comic_ids]
     selected_pages = select_pages(pages, args.selection, args.limit, args.seed)
     extractor = PaddleOCRComplementaryExtractor(
         lang=args.lang,
         use_angle_cls=args.use_angle_cls,
     )
+    visual_output_dir = (
+        Path(args.visual_output_dir).expanduser().resolve()
+        if args.visual_output_dir
+        else None
+    )
+    if visual_output_dir:
+        visual_output_dir.mkdir(parents=True, exist_ok=True)
 
     comparisons: list[dict[str, Any]] = []
     ocr_results: list[dict[str, Any]] = []
@@ -84,11 +110,19 @@ def main() -> None:
             ocr_result=ocr_result,
             iou_threshold=args.iou_threshold,
         )
+        visual_path = None
+        if visual_output_dir and not ocr_result.error:
+            visual_path = visual_comic_dir(visual_output_dir, page.comic_id) / visual_page_name(
+                page.file_name,
+                "ocr_boxes",
+            )
+            draw_paddle_ocr_readable_overlay_from_dict(ocr_result.to_dict(), visual_path)
         comparisons.append(
             comparison.to_dict()
             | {
                 "image_path": str(image_path),
                 "paddle_text_preview": ocr_result.text[:500],
+                "visual_path": str(visual_path) if visual_path else None,
             }
         )
         ocr_results.append(ocr_result.to_dict())
@@ -98,11 +132,13 @@ def main() -> None:
         "magi_input": str(Path(args.magi_input).expanduser().resolve()),
         "image_root": str(Path(args.image_root).expanduser().resolve()),
         "dataset_name": args.dataset_name,
+        "comic_ids": args.comic_id,
         "selection": args.selection,
         "limit": args.limit,
         "seed": args.seed,
         "lang": args.lang,
         "use_angle_cls": args.use_angle_cls,
+        "visual_output_dir": str(visual_output_dir) if visual_output_dir else None,
         "summary": summarize_comparisons(comparisons, missing_images),
         "missing_images": missing_images,
         "comparisons": comparisons,

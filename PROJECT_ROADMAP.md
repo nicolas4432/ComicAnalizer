@@ -327,15 +327,23 @@ features/magi_postprocess.py
 features/ocr_paddle.py
 tools/analyze_magi_results.py
 tools/compare_magi_paddleocr.py
+tools/standardize_magi_outputs.py
 notebooks/MAGI_ANALYSIS_COLAB.ipynb
+notebooks/OCR_COMPARISON_COLAB.ipynb
 ```
 
-La salida de trabajo principal ahora es:
+La salida de trabajo principal ahora usa una ruta estandar por corrida:
 
 ```text
-outputs/magi_analysis_report.json
-outputs/paddle_magi_ocr_comparison.json
+outputs/runs/<run_name>/manifest.json
+outputs/runs/<run_name>/analysis/magi_analysis_report.json
+outputs/runs/<run_name>/analysis/paddle_magi_ocr_comparison.json
+outputs/runs/<run_name>/visuals/magi_boxes/<comic_id>/
+outputs/runs/<run_name>/visuals/ocr_boxes/<comic_id>/
 ```
+
+Los overlays visuales se guardan separados por comic para revisar resultados
+lado a lado sin mezclar paginas de historias distintas.
 
 ### Fase 3: Detector De Paneles Complementario
 

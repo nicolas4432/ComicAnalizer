@@ -6,6 +6,9 @@ Para el flujo completo con reporte de calidad y comparacion PaddleOCR, abre
 `notebooks/MAGI_ANALYSIS_COLAB.ipynb` directamente en Colab. Esta guia queda
 como version rapida/manual.
 
+Para probar solo OCR complementario sobre resultados Magi ya existentes, abre
+`notebooks/OCR_COMPARISON_COLAB.ipynb`.
+
 La idea es probar primero deteccion sin OCR:
 
 - paneles
@@ -26,14 +29,14 @@ python -m tools.export_magi_cloud_sample `
   --dataset-name test_1_clean `
   --selection middle `
   --max-comics 8 `
-  --output-dir outputs\magi_cloud_sample `
-  --zip-path outputs\magi_cloud_sample.zip
+  --output-dir outputs\packages\magi_cloud_sample `
+  --zip-path outputs\packages\magi_cloud_sample.zip
 ```
 
 Esto crea:
 
 ```text
-outputs/magi_cloud_sample.zip
+outputs/packages/magi_cloud_sample.zip
 ```
 
 Ese ZIP queda fuera de Git porque `outputs/` esta ignorado. Es lo recomendado si los comics son privados, pesados, con copyright o contenido sensible.
@@ -46,14 +49,33 @@ python -m tools.export_magi_cloud_sample `
   --dataset-name test_1_clean `
   --all-pages `
   --max-comics 0 `
-  --output-dir outputs\magi_clean_full `
-  --zip-path outputs\magi_clean_full.zip
+  --output-dir outputs\packages\magi_clean_full `
+  --zip-path outputs\packages\magi_clean_full.zip
 ```
 
 Esto crea:
 
 ```text
-outputs/magi_clean_full.zip
+outputs/packages/magi_clean_full.zip
+```
+
+Para preparar solo el comic nuevo `nekkorarekko` completo:
+
+```powershell
+python -m tools.export_magi_cloud_sample `
+  --by-comic-root "C:\Users\nico4\Downloads\ComicPruebas\datasets\by_comic" `
+  --dataset-name test_1_clean `
+  --all-pages `
+  --comic-id nekkorarekko `
+  --max-comics 0 `
+  --output-dir outputs\packages\magi_nekkorarekko_clean `
+  --zip-path outputs\packages\magi_nekkorarekko_clean.zip
+```
+
+Esto crea:
+
+```text
+outputs/packages/magi_nekkorarekko_clean.zip
 ```
 
 ## 1. Activar GPU En Colab
@@ -107,7 +129,13 @@ Colab ya trae PyTorch con CUDA. No reinstales `torch` salvo que sea necesario.
 Sube el archivo:
 
 ```text
-outputs/magi_cloud_sample.zip
+outputs/packages/magi_cloud_sample.zip
+```
+
+Para el comic nuevo sube:
+
+```text
+outputs/packages/magi_nekkorarekko_clean.zip
 ```
 
 ```python
@@ -116,7 +144,9 @@ from pathlib import Path
 
 uploaded = files.upload()
 zip_name = next(iter(uploaded))
+package_name = zip_name.replace(".zip", "")
 print("ZIP subido:", zip_name)
+print("Package:", package_name)
 
 !rm -rf /content/magi_sample
 !mkdir -p /content/magi_sample
@@ -133,12 +163,12 @@ Usa `--max-comics 3` para una prueba rapida. Si tarda poco, sube a 5 u 8.
 
 !python -m tools.inspect_magi_dataset \
   --input /content/magi_sample/magi_cloud_sample/by_comic \
-  --output-dir outputs/magi_debug/colab_middle_detections \
+  --output-dir outputs/runs/colab_middle_sample/magi \
   --sample-one-per-comic \
   --dataset-name test_1_clean \
   --selection middle \
   --task detections \
-  --cache-dir outputs/magi_cache \
+  --cache-dir outputs/cache/magi \
   --device cuda \
   --dtype float16 \
   --max-comics 3
@@ -168,14 +198,68 @@ de `test_1_clean` en todos los comics incluidos en el ZIP.
 
 !python -m tools.inspect_magi_dataset \
   --input /content/magi_sample/magi_clean_full/by_comic \
-  --output-dir outputs/magi_debug/colab_clean_full_detections \
+  --output-dir outputs/runs/colab_clean_full/magi \
+  --visual-output-dir outputs/runs/colab_clean_full/visuals/magi_boxes \
   --all-pages-per-comic \
+  --no-panel-crops \
   --dataset-name test_1_clean \
   --task detections \
-  --cache-dir outputs/magi_cache \
+  --cache-dir outputs/cache/magi \
   --device cuda \
   --dtype float16 \
   --max-comics 0
+```
+
+## 5C. Ejecutar Solo Nekkorarekko Sin OCR
+
+Usa esta version cuando subas `magi_nekkorarekko_clean.zip`.
+Los resultados visuales quedan separados por comic en:
+
+```text
+outputs/runs/nekkorarekko_clean/visuals/magi_boxes/nekkorarekko/
+```
+
+```python
+%cd /content/ComicAnalizer
+
+RUN_NAME = "nekkorarekko_clean"
+PACKAGE_NAME = "magi_nekkorarekko_clean"
+
+!python -m tools.inspect_magi_dataset \
+  --input /content/magi_sample/$PACKAGE_NAME/by_comic \
+  --output-dir outputs/runs/$RUN_NAME/magi \
+  --visual-output-dir outputs/runs/$RUN_NAME/visuals/magi_boxes \
+  --all-pages-per-comic \
+  --no-panel-crops \
+  --dataset-name test_1_clean \
+  --task detections \
+  --cache-dir outputs/cache/magi \
+  --device cuda \
+  --dtype float16 \
+  --comic-id nekkorarekko \
+  --max-comics 0
+```
+
+Para comparar una muestra con PaddleOCR:
+
+```python
+!python -m tools.compare_magi_paddleocr \
+  --magi-input outputs/runs/$RUN_NAME/magi \
+  --image-root /content/magi_sample/$PACKAGE_NAME/by_comic \
+  --dataset-name test_1_clean \
+  --selection random \
+  --limit 12 \
+  --seed 42 \
+  --lang en \
+  --comic-id nekkorarekko \
+  --visual-output-dir outputs/runs/$RUN_NAME/visuals/ocr_boxes \
+  --output outputs/runs/$RUN_NAME/analysis/paddle_magi_ocr_comparison.json
+```
+
+Los overlays de OCR quedan en:
+
+```text
+outputs/runs/nekkorarekko_clean/visuals/ocr_boxes/nekkorarekko/
 ```
 
 Si quieres probar el flujo completo pero sin gastar toda la sesion de Colab,
@@ -184,11 +268,13 @@ limita primero a 1 o 2 comics:
 ```python
 !python -m tools.inspect_magi_dataset \
   --input /content/magi_sample/magi_clean_full/by_comic \
-  --output-dir outputs/magi_debug/colab_clean_two_comics_detections \
+  --output-dir outputs/runs/colab_clean_two_comics/magi \
+  --visual-output-dir outputs/runs/colab_clean_two_comics/visuals/magi_boxes \
   --all-pages-per-comic \
+  --no-panel-crops \
   --dataset-name test_1_clean \
   --task detections \
-  --cache-dir outputs/magi_cache \
+  --cache-dir outputs/cache/magi \
   --device cuda \
   --dtype float16 \
   --max-comics 2
@@ -203,7 +289,7 @@ final, porque el runtime de Colab se puede reiniciar.
 import json
 from pathlib import Path
 
-metrics_path = Path("outputs/magi_debug/colab_middle_detections/metrics.json")
+metrics_path = Path("outputs/runs/colab_middle_sample/magi/metrics.json")
 metrics = json.loads(metrics_path.read_text())
 
 print("Paginas:", metrics["page_count"])
@@ -224,17 +310,17 @@ for page in metrics["pages"]:
 
 ## 7. Repetir Para Probar Cache
 
-La segunda corrida deberia ser mucho mas rapida porque lee `outputs/magi_cache`.
+La segunda corrida deberia ser mucho mas rapida porque lee `outputs/cache/magi`.
 
 ```python
 !python -m tools.inspect_magi_dataset \
   --input /content/magi_sample/magi_cloud_sample/by_comic \
-  --output-dir outputs/magi_debug/colab_middle_detections_cached \
+  --output-dir outputs/runs/colab_middle_sample_cached/magi \
   --sample-one-per-comic \
   --dataset-name test_1_clean \
   --selection middle \
   --task detections \
-  --cache-dir outputs/magi_cache \
+  --cache-dir outputs/cache/magi \
   --device cuda \
   --dtype float16 \
   --max-comics 3
@@ -245,8 +331,10 @@ La segunda corrida deberia ser mucho mas rapida porque lee `outputs/magi_cache`.
 ```python
 from google.colab import files
 
-!zip -qr magi_colab_results.zip outputs/magi_debug/colab_middle_detections outputs/magi_cache
-files.download("magi_colab_results.zip")
+RUN_NAME = "nekkorarekko_clean"  # cambia si usaste otro run
+zip_out = f"{RUN_NAME}_magi_ocr_outputs.zip"
+!zip -qr "$zip_out" outputs/runs/$RUN_NAME outputs/cache/magi
+files.download(zip_out)
 ```
 
 ## Que Mirar Primero
@@ -254,7 +342,8 @@ files.download("magi_colab_results.zip")
 - `metrics.json`: tiempos, cache, conteos por pagina.
 - `summary.json`: resumen legible por pagina.
 - `magi_results.json`: salida completa normalizada.
-- `*_boxes.jpg`: imagen con cajas dibujadas.
+- `visuals/magi_boxes/<comic>/*_magi_boxes.jpg`: cajas Magi por comic.
+- `visuals/ocr_boxes/<comic>/*_ocr_boxes.jpg`: cajas PaddleOCR por comic.
 - carpetas `001_*`, `002_*`: recortes de paneles detectados.
 
 Para calibrar Magi despues, usa estas salidas como evidencia: falsos negativos de personajes, globos sin cola, colas sin asociacion, paneles partidos o paneles fusionados.

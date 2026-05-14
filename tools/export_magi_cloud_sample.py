@@ -26,12 +26,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default="outputs/magi_cloud_sample",
+        default="outputs/packages/magi_cloud_sample",
         help="Folder where the cloud dataset will be assembled.",
     )
     parser.add_argument(
         "--zip-path",
-        default="outputs/magi_cloud_sample.zip",
+        default="outputs/packages/magi_cloud_sample.zip",
         help="ZIP path to create for Colab upload.",
     )
     parser.add_argument(
@@ -50,6 +50,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=8,
         help="Maximum comics to include. 0 means all comics.",
+    )
+    parser.add_argument(
+        "--comic-id",
+        action="append",
+        default=[],
+        help="Only include this comic id. Can be repeated.",
     )
     parser.add_argument("--seed", type=int, default=17, help="Random selection seed.")
     return parser.parse_args()
@@ -74,11 +80,15 @@ def main() -> None:
         "all_pages": args.all_pages,
         "selection": args.selection,
         "max_comics": args.max_comics,
+        "comic_ids": args.comic_id,
         "pages": [],
     }
 
     copied_comics = 0
+    comic_ids = set(args.comic_id or [])
     for comic_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        if comic_ids and comic_dir.name not in comic_ids:
+            continue
         if args.max_comics > 0 and copied_comics >= args.max_comics:
             break
 
