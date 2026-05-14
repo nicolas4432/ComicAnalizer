@@ -319,6 +319,24 @@ features/magi_normalizer.py
 
 para convertir outputs crudos de Magi a estructuras internas estables.
 
+Estado inicial implementado:
+
+```text
+features/magi_schema.py
+features/magi_postprocess.py
+features/ocr_paddle.py
+tools/analyze_magi_results.py
+tools/compare_magi_paddleocr.py
+notebooks/MAGI_ANALYSIS_COLAB.ipynb
+```
+
+La salida de trabajo principal ahora es:
+
+```text
+outputs/magi_analysis_report.json
+outputs/paddle_magi_ocr_comparison.json
+```
+
 ### Fase 3: Detector De Paneles Complementario
 
 Evaluar:

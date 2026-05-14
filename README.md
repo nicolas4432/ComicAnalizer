@@ -141,3 +141,32 @@ Ver detalles en [PROJECT_ROADMAP.md](PROJECT_ROADMAP.md).
 
 Para probar Magi en Colab Free con GPU y una muestra pequena de paginas limpias,
 ver [COLAB_MAGI_QUICKTEST.md](COLAB_MAGI_QUICKTEST.md).
+
+Para correr el flujo completo Magi + reporte de calidad + comparacion
+PaddleOCR, abrir [notebooks/MAGI_ANALYSIS_COLAB.ipynb](notebooks/MAGI_ANALYSIS_COLAB.ipynb)
+en Colab.
+
+## Analisis De Resultados Magi
+
+Un ZIP descargado desde Colab se puede convertir en un reporte normalizado:
+
+```bash
+python -m tools.analyze_magi_results ^
+  --input "C:\Users\nico4\Downloads\magi_colab_full_results.zip" ^
+  --output outputs/magi_analysis_report.json
+```
+
+Para comparar una muestra de paginas contra PaddleOCR:
+
+```bash
+python -m tools.compare_magi_paddleocr ^
+  --magi-input "C:\Users\nico4\Downloads\magi_colab_full_results.zip" ^
+  --image-root "C:\Users\nico4\Downloads\ComicPruebas\datasets\by_comic" ^
+  --dataset-name test_1_clean ^
+  --selection random ^
+  --limit 3 ^
+  --output outputs/paddle_magi_ocr_comparison.json
+```
+
+En Windows CPU, PaddleOCR puede ser muy lento. Para pruebas de mayor tamano,
+usar el notebook de Colab.
