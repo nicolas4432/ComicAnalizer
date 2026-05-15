@@ -40,7 +40,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional directory for PaddleOCR text box overlays.",
     )
-    parser.add_argument("--limit", type=int, default=5)
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=5,
+        help="Maximum pages to OCR. Use 0 to process every selected page.",
+    )
     parser.add_argument("--seed", type=int, default=23)
     parser.add_argument(
         "--comic-id",
@@ -158,6 +163,8 @@ def select_pages(
     limit: int,
     seed: int,
 ) -> list[Any]:
+    if limit <= 0:
+        limit = len(pages)
     if selection == "first":
         return pages[:limit]
     if selection == "suspicious":

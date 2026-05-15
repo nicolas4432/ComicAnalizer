@@ -7,6 +7,7 @@ from typing import Any
 from PIL import Image, ImageDraw, ImageFont
 
 from features.magi_schema import BoundingBox, MagiPageAnalysis
+from features.ocr_grouping import OCRGroupedText
 from features.ocr_paddle import PaddleOCRPageResult
 
 
@@ -28,6 +29,7 @@ OCR_COLOR = "orange"
 OCR_BOX_COLOR = (255, 184, 28)
 OCR_BADGE_FILL = (255, 214, 70)
 OCR_TEXT_COLOR = (0, 0, 0)
+OCR_GROUP_COLOR = (0, 170, 90)
 
 
 def draw_overlay(
@@ -140,7 +142,7 @@ def draw_paddle_ocr_readable_overlay_from_dict(
     image = Image.open(ocr_result["path"]).convert("RGB")
     blocks = readable_ocr_blocks(ocr_result, min_confidence=min_confidence)
 
-    badge_font = load_font(size=max(18, image.width // 55), bold=True)
+    badge_font = load_font(size=max(10, image.width // 110), bold=True)
     sidebar_font = load_font(size=max(18, image.width // 65), bold=False)
     sidebar_bold = load_font(size=max(20, image.width // 58), bold=True)
     line_height = max(28, sidebar_font.size + 10 if hasattr(sidebar_font, "size") else 28)
@@ -159,6 +161,7 @@ def draw_paddle_ocr_readable_overlay_from_dict(
             block=block,
             display_index=display_index,
             font=badge_font,
+            image_size=image.size,
         )
 
     sidebar_x = image.width
@@ -185,6 +188,103 @@ def draw_paddle_ocr_readable_overlay_from_dict(
     target = Path(output_path).expanduser().resolve()
     target.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(target)
+
+
+def draw_ocr_grouped_overlay(
+    image_path: str | Path,
+    groups: list[OCRGroupedText],
+    output_path: str | Path,
+    sidebar_width: int = 620,
+) -> None:
+    image = Image.open(image_path).convert("RGB")
+    sidebar_font = load_font(size=max(18, image.width // 65), bold=False)
+    sidebar_bold = load_font(size=max(20, image.width // 58), bold=True)
+    badge_font = load_font(size=max(12, image.width // 95), bold=True)
+    line_height = max(30, sidebar_font.size + 12 if hasattr(sidebar_font, "size") else 30)
+    header_height = 104
+    sidebar_needed_height = header_height + max(1, len(groups)) * line_height * 2 + 32
+    canvas_height = max(image.height, sidebar_needed_height)
+    canvas_width = image.width + sidebar_width
+    canvas = Image.new("RGB", (canvas_width, canvas_height), "white")
+    canvas.paste(image, (0, 0))
+    draw = ImageDraw.Draw(canvas)
+
+    for display_index, group in enumerate(groups, 1):
+        for block in group.blocks:
+            draw_ocr_block_outline(draw, block)
+        draw.rectangle(
+            (group.box.x1, group.box.y1, group.box.x2, group.box.y2),
+            outline=OCR_GROUP_COLOR,
+            width=5,
+        )
+        draw_group_badge(draw, group.box, display_index, badge_font)
+
+    sidebar_x = image.width
+    draw.rectangle((sidebar_x, 0, canvas_width, canvas_height), fill=(248, 248, 248))
+    draw.line((sidebar_x, 0, sidebar_x, canvas_height), fill=(210, 210, 210), width=3)
+    draw.text((sidebar_x + 24, 24), "OCR grouped bubbles", fill=OCR_TEXT_COLOR, font=sidebar_bold)
+    draw.text(
+        (sidebar_x + 24, 58),
+        f"{len(groups)} grupos calibrados",
+        fill=(70, 70, 70),
+        font=sidebar_font,
+    )
+
+    y = header_height
+    for display_index, group in enumerate(groups, 1):
+        confidence = f"{group.confidence:.2f}" if group.confidence is not None else "--"
+        block_ids = ",".join(str(index) for index in group.block_indices)
+        header = f"{display_index:02d} [{confidence}] blocks={block_ids}"
+        draw.text((sidebar_x + 24, y), header[:72], fill=OCR_TEXT_COLOR, font=sidebar_bold)
+        y += line_height
+        draw.text((sidebar_x + 24, y), group.text[:78], fill=OCR_TEXT_COLOR, font=sidebar_font)
+        y += line_height
+
+    target = Path(output_path).expanduser().resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(target)
+
+
+def draw_ocr_block_outline(draw: ImageDraw.ImageDraw, block: dict[str, Any]) -> None:
+    polygon = block.get("polygon")
+    if polygon:
+        points = [(float(point[0]), float(point[1])) for point in polygon]
+        if len(points) >= 2:
+            draw.line(points + [points[0]], fill=OCR_BOX_COLOR, width=3)
+            return
+    box_payload = block.get("box") or {}
+    draw.rectangle(
+        (
+            float(box_payload.get("x1", 0.0)),
+            float(box_payload.get("y1", 0.0)),
+            float(box_payload.get("x2", 0.0)),
+            float(box_payload.get("y2", 0.0)),
+        ),
+        outline=OCR_BOX_COLOR,
+        width=3,
+    )
+
+
+def draw_group_badge(
+    draw: ImageDraw.ImageDraw,
+    box: BoundingBox,
+    display_index: int,
+    font: ImageFont.ImageFont,
+) -> None:
+    label = f"{display_index:02d}"
+    text_box = draw.textbbox((0, 0), label, font=font)
+    text_width = text_box[2] - text_box[0]
+    text_height = text_box[3] - text_box[1]
+    diameter = max(22, max(text_width, text_height) + 10)
+    x = max(2, box.x1 - diameter - 3)
+    y = max(2, box.y1 - diameter - 3)
+    draw.ellipse((x, y, x + diameter, y + diameter), fill=(120, 235, 170), outline=OCR_TEXT_COLOR, width=2)
+    draw.text(
+        (x + (diameter - text_width) / 2, y + (diameter - text_height) / 2 - 1),
+        label,
+        fill=OCR_TEXT_COLOR,
+        font=font,
+    )
 
 
 def readable_ocr_blocks(
@@ -214,6 +314,7 @@ def draw_ocr_box_with_badge(
     block: dict[str, Any],
     display_index: int,
     font: ImageFont.ImageFont,
+    image_size: tuple[int, int],
 ) -> None:
     box_payload = block.get("box") or {}
     x1 = float(box_payload.get("x1", 0.0))
@@ -221,6 +322,7 @@ def draw_ocr_box_with_badge(
     x2 = float(box_payload.get("x2", 0.0))
     y2 = float(box_payload.get("y2", 0.0))
     polygon = block.get("polygon")
+    points: list[tuple[float, float]] = []
     if polygon:
         points = [(float(point[0]), float(point[1])) for point in polygon]
         if len(points) >= 2:
@@ -230,16 +332,96 @@ def draw_ocr_box_with_badge(
 
     label = f"{display_index:02d}"
     label_box = draw.textbbox((0, 0), label, font=font)
-    label_width = label_box[2] - label_box[0] + 12
-    label_height = label_box[3] - label_box[1] + 8
-    badge_x1 = max(0, x1)
-    badge_y1 = max(0, y1 - label_height - 2)
-    if badge_y1 < 4:
-        badge_y1 = y1 + 2
-    badge_x2 = badge_x1 + label_width
-    badge_y2 = badge_y1 + label_height
-    draw.rectangle((badge_x1, badge_y1, badge_x2, badge_y2), fill=OCR_BADGE_FILL, outline=OCR_TEXT_COLOR, width=2)
-    draw.text((badge_x1 + 6, badge_y1 + 3), label, fill=OCR_TEXT_COLOR, font=font)
+    text_width = label_box[2] - label_box[0]
+    text_height = label_box[3] - label_box[1]
+    diameter = max(18, max(text_width, text_height) + 8)
+    badge_x1, badge_y1 = choose_badge_position(
+        x1=x1,
+        y1=y1,
+        x2=x2,
+        y2=y2,
+        diameter=diameter,
+        polygon_points=points,
+        image_size=image_size,
+    )
+    badge_x2 = badge_x1 + diameter
+    badge_y2 = badge_y1 + diameter
+    draw.ellipse((badge_x1, badge_y1, badge_x2, badge_y2), fill=OCR_BADGE_FILL, outline=OCR_TEXT_COLOR, width=2)
+    text_x = badge_x1 + (diameter - text_width) / 2
+    text_y = badge_y1 + (diameter - text_height) / 2 - 1
+    draw.text((text_x, text_y), label, fill=OCR_TEXT_COLOR, font=font)
+
+
+def choose_badge_position(
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
+    diameter: int,
+    polygon_points: list[tuple[float, float]] | None = None,
+    image_size: tuple[int, int] | None = None,
+    margin: int = 2,
+) -> tuple[float, float]:
+    if polygon_points and len(polygon_points) >= 3:
+        polygon_position = choose_polygon_badge_position(
+            points=polygon_points,
+            diameter=diameter,
+            image_size=image_size,
+            margin=margin,
+        )
+        if polygon_position is not None:
+            return polygon_position
+
+    # Preferred position: attached to the outside top-left corner of the OCR box.
+    preferred_x = x1 - diameter - margin
+    preferred_y = y1 - diameter - margin
+    if preferred_x >= margin and preferred_y >= margin:
+        return preferred_x, preferred_y
+
+    # If the top-left outside corner would leave the image, keep the badge
+    # attached to the nearest outside edge instead of letting it float away.
+    candidates = [
+        (x1, y1 - diameter - margin),  # above, aligned with left edge
+        (x1 - diameter - margin, y1),  # left, aligned with top edge
+        (x2 + margin, y1),  # right, aligned with top edge
+        (x1, y2 + margin),  # below, aligned with left edge
+    ]
+    for candidate_x, candidate_y in candidates:
+        if candidate_x >= margin and candidate_y >= margin:
+            return candidate_x, candidate_y
+
+    # Last resort for boxes touching both top and left borders.
+    return max(margin, x1 + margin), max(margin, y1 + margin)
+
+
+def choose_polygon_badge_position(
+    points: list[tuple[float, float]],
+    diameter: int,
+    image_size: tuple[int, int] | None,
+    margin: int,
+) -> tuple[float, float] | None:
+    corner_x, corner_y = min(points, key=lambda point: (point[0] + point[1], point[1], point[0]))
+    center_x = sum(point[0] for point in points) / len(points)
+    center_y = sum(point[1] for point in points) / len(points)
+    vector_x = corner_x - center_x
+    vector_y = corner_y - center_y
+    magnitude = max((vector_x**2 + vector_y**2) ** 0.5, 1.0)
+    unit_x = vector_x / magnitude
+    unit_y = vector_y / magnitude
+    radius = diameter / 2
+
+    badge_center_x = corner_x + unit_x * (radius + margin)
+    badge_center_y = corner_y + unit_y * (radius + margin)
+    badge_x = badge_center_x - radius
+    badge_y = badge_center_y - radius
+
+    if image_size is not None:
+        max_x = max(margin, image_size[0] - diameter - margin)
+        max_y = max(margin, image_size[1] - diameter - margin)
+        badge_x = min(max(badge_x, margin), max_x)
+        badge_y = min(max(badge_y, margin), max_y)
+
+    return badge_x, badge_y
 
 
 def load_font(size: int, bold: bool) -> ImageFont.ImageFont:

@@ -23,6 +23,7 @@ outputs/
 # Local data and generated assets
 data/
 datasets/
+annotations/ocr_evidence*/
 *.log
 
 # OS/editor

@@ -212,3 +212,28 @@ python -m tools.compare_magi_paddleocr ^
 
 En Windows CPU, PaddleOCR puede ser muy lento. Para pruebas de mayor tamano,
 usar el notebook de Colab.
+
+## Evidencia OCR Para Calibracion
+
+Para convertir resultados PaddleOCR en un dataset auditable de crops,
+geometria, contexto Magi y plantillas de correccion:
+
+```bash
+python -m tools.export_ocr_evidence ^
+  --ocr-report outputs/runs/colab_clean_full/analysis/paddle_magi_ocr_comparison.json ^
+  --magi-input outputs/runs/colab_clean_full/magi ^
+  --output-dir annotations/ocr_evidence
+```
+
+Esto genera:
+
+```text
+annotations/ocr_evidence/evidence.jsonl
+annotations/ocr_evidence/correction_template.jsonl
+annotations/ocr_evidence/evidence_index.json
+annotations/ocr_evidence/assets/<comic_id>/<page>/
+```
+
+Cada registro conserva texto OCR crudo, confianza, poligono, crop del bloque,
+crop con contexto, crop de region Magi/panel cuando existe y un espacio para
+correccion humana posterior.

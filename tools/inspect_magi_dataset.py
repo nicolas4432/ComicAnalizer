@@ -294,14 +294,21 @@ def main() -> None:
     if not selected_images:
         raise RuntimeError(f"No supported images found in {args.input}")
 
+    print(
+        f"Found {len(selected_images)} pages for dataset={args.dataset_name}, "
+        f"task={args.task}, device={args.device}, dtype={args.dtype}",
+        flush=True,
+    )
+    print("Loading Magi extractor...", flush=True)
     extractor = MagiPageExtractor(device=args.device, dtype=args.dtype)
+    print("Magi extractor loaded.", flush=True)
     results: list[dict[str, Any]] = []
     summaries: list[dict[str, Any]] = []
     metrics: list[dict[str, Any]] = []
     wall_start = time.perf_counter()
 
     for index, (comic_id, image_path) in enumerate(selected_images, 1):
-        print(f"[{index}/{len(selected_images)}] {comic_id}: {image_path.name}")
+        print(f"[{index}/{len(selected_images)}] {comic_id}: {image_path.name}", flush=True)
         result, item_metrics = run_or_load(
             extractor=extractor,
             image_path=image_path,
