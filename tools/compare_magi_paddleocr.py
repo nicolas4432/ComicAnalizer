@@ -81,6 +81,13 @@ def main() -> None:
         lang=args.lang,
         use_angle_cls=args.use_angle_cls,
     )
+    try:
+        extractor.load()
+    except Exception as exc:  # noqa: BLE001 - CLI should fail loudly here.
+        raise RuntimeError(
+            "PaddleOCR initialization failed before processing pages. "
+            "Check that paddlepaddle and paddleocr are installed correctly."
+        ) from exc
     visual_output_dir = (
         Path(args.visual_output_dir).expanduser().resolve()
         if args.visual_output_dir

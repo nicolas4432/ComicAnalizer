@@ -120,7 +120,8 @@ class PaddleOCRComplementaryExtractor:
             from paddleocr import PaddleOCR
         except ImportError as exc:
             raise RuntimeError(
-                "PaddleOCR is not installed. Install it with: pip install paddleocr"
+                "PaddleOCR could not be imported. Install/verify paddleocr and "
+                f"paddlepaddle first. Original import error: {exc}"
             ) from exc
 
         try:
