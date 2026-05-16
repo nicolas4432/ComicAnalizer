@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import time
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +67,12 @@ def parse_args() -> argparse.Namespace:
         help="Enable text-line orientation classification. Slower, useful for rotated text.",
     )
     parser.add_argument("--iou-threshold", type=float, default=0.15)
+    parser.add_argument(
+        "--checkpoint-every",
+        type=int,
+        default=1,
+        help="Write a partial JSON report every N processed pages. 0 disables checkpoints.",
+    )
     return parser.parse_args()
 
 
@@ -99,6 +106,15 @@ def main() -> None:
     comparisons: list[dict[str, Any]] = []
     ocr_results: list[dict[str, Any]] = []
     missing_images: list[dict[str, str]] = []
+    output = Path(args.output).expanduser().resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    run_start = time.perf_counter()
+
+    print(
+        f"Selected {len(selected_pages)} pages for PaddleOCR "
+        f"(selection={args.selection}, limit={args.limit}, lang={args.lang})",
+        flush=True,
+    )
 
     for index, page in enumerate(selected_pages, 1):
         image_path = resolve_image_path(
@@ -115,8 +131,10 @@ def main() -> None:
                 }
             )
             continue
-        print(f"[{index}/{len(selected_pages)}] OCR {page.comic_id}/{page.file_name}")
+        print(f"[{index}/{len(selected_pages)}] OCR {page.comic_id}/{page.file_name}", flush=True)
+        page_start = time.perf_counter()
         ocr_result = extractor.extract_page(image_path)
+        page_elapsed = time.perf_counter() - page_start
         comparison = compare_magi_with_paddle(
             page=page,
             ocr_result=ocr_result,
@@ -138,8 +156,46 @@ def main() -> None:
             }
         )
         ocr_results.append(ocr_result.to_dict())
+        processed = len(comparisons)
+        avg_elapsed = (time.perf_counter() - run_start) / max(1, processed)
+        remaining = max(0, len(selected_pages) - index)
+        eta_seconds = avg_elapsed * remaining
+        print(
+            "  -> "
+            f"seconds={page_elapsed:.2f}, blocks={len(ocr_result.blocks)}, "
+            f"error={ocr_result.error or 'none'}, eta_min={eta_seconds / 60:.1f}",
+            flush=True,
+        )
+        if args.checkpoint_every > 0 and processed % args.checkpoint_every == 0:
+            write_report(
+                output.with_suffix(".partial.json"),
+                args=args,
+                visual_output_dir=visual_output_dir,
+                comparisons=comparisons,
+                missing_images=missing_images,
+                ocr_results=ocr_results,
+            )
 
-    report = {
+    report = build_report(
+        args=args,
+        visual_output_dir=visual_output_dir,
+        comparisons=comparisons,
+        missing_images=missing_images,
+        ocr_results=ocr_results,
+    )
+    output.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    print(json.dumps(report["summary"], indent=2, ensure_ascii=False))
+    print(f"Wrote PaddleOCR/Magi comparison: {output}")
+
+
+def build_report(
+    args: argparse.Namespace,
+    visual_output_dir: Path | None,
+    comparisons: list[dict[str, Any]],
+    missing_images: list[dict[str, str]],
+    ocr_results: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
         "schema_version": "paddle_magi_ocr_comparison.v1",
         "magi_input": str(Path(args.magi_input).expanduser().resolve()),
         "image_root": str(Path(args.image_root).expanduser().resolve()),
@@ -157,11 +213,23 @@ def main() -> None:
         "ocr_results": ocr_results,
     }
 
-    output = Path(args.output).expanduser().resolve()
-    output.parent.mkdir(parents=True, exist_ok=True)
+
+def write_report(
+    output: Path,
+    args: argparse.Namespace,
+    visual_output_dir: Path | None,
+    comparisons: list[dict[str, Any]],
+    missing_images: list[dict[str, str]],
+    ocr_results: list[dict[str, Any]],
+) -> None:
+    report = build_report(
+        args=args,
+        visual_output_dir=visual_output_dir,
+        comparisons=comparisons,
+        missing_images=missing_images,
+        ocr_results=ocr_results,
+    )
     output.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(json.dumps(report["summary"], indent=2, ensure_ascii=False))
-    print(f"Wrote PaddleOCR/Magi comparison: {output}")
 
 
 def select_pages(
