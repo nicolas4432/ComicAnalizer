@@ -13,7 +13,7 @@ from features.ocr_paddle import box_iou, polygon_to_box
 from reports.box_visualization import sanitize_filename
 
 
-SCHEMA_VERSION = "ocr_evidence.v1"
+SCHEMA_VERSION = "ocr_evidence.v2"
 
 
 @dataclass(frozen=True)
@@ -36,9 +36,13 @@ def export_ocr_evidence(
     ocr_report: dict[str, Any],
     output_dir: Path,
     magi_pages: list[MagiPageAnalysis] | None = None,
+    image_root: Path | None = None,
+    dataset_name: str = "test_1_clean",
     include_empty_blocks: bool = False,
     context_padding: int = 56,
     limit_pages: int | None = None,
+    asset_policy: str = "priority",
+    max_asset_blocks: int | None = 500,
 ) -> dict[str, Any]:
     output_dir = output_dir.expanduser().resolve()
     assets_dir = output_dir / "assets"
@@ -47,6 +51,7 @@ def export_ocr_evidence(
 
     magi_by_page = build_magi_page_map(magi_pages or [])
     comparisons_by_path = build_comparison_path_map(ocr_report)
+    comparisons_by_page_key = build_comparison_page_map(ocr_report)
 
     evidence_path = output_dir / "evidence.jsonl"
     correction_template_path = output_dir / "correction_template.jsonl"
@@ -58,16 +63,22 @@ def export_ocr_evidence(
     block_count = 0
     skipped_empty = 0
     assets_count = 0
+    asset_block_count = 0
     per_page: list[dict[str, Any]] = []
 
     with evidence_path.open("w", encoding="utf-8") as evidence_file, correction_template_path.open(
         "w", encoding="utf-8"
     ) as correction_file:
         for ocr_page in page_items:
-            image_path = Path(str(ocr_page.get("path") or ""))
-            if not image_path.exists():
+            comparison = match_comparison(ocr_page, comparisons_by_path, comparisons_by_page_key)
+            image_path = resolve_ocr_image_path(
+                ocr_page=ocr_page,
+                comparison=comparison,
+                image_root=image_root,
+                dataset_name=dataset_name,
+            )
+            if image_path is None:
                 continue
-            comparison = match_comparison(ocr_page, comparisons_by_path)
             comic_id = infer_comic_id(image_path, comparison)
             file_name = image_path.name
             page_key = build_page_key(comic_id, file_name)
@@ -89,20 +100,36 @@ def export_ocr_evidence(
                 block_box = box_from_block(block)
                 block_polygon = block.get("polygon") or []
                 magi_context = build_magi_context(block_box, magi_page)
-
-                asset_paths = write_block_assets(
-                    image=image,
-                    output_root=output_dir,
-                    assets_dir=assets_dir,
-                    comic_id=comic_id,
-                    page_stem=image_path.stem,
-                    block_index=block_index,
+                page_metrics = build_page_metrics(comparison)
+                review = build_review_payload(
+                    block=block,
                     block_box=block_box,
-                    block_polygon=block_polygon,
-                    context_padding=context_padding,
                     magi_context=magi_context,
+                    page_metrics=page_metrics,
                 )
-                assets_count += len(asset_paths)
+
+                should_write_assets = should_export_assets(
+                    asset_policy=asset_policy,
+                    review=review,
+                    assets_written_for_blocks=asset_block_count,
+                    max_asset_blocks=max_asset_blocks,
+                )
+                asset_paths: dict[str, str] = {}
+                if should_write_assets:
+                    asset_paths = write_block_assets(
+                        image=image,
+                        output_root=output_dir,
+                        assets_dir=assets_dir,
+                        comic_id=comic_id,
+                        page_stem=image_path.stem,
+                        block_index=block_index,
+                        block_box=block_box,
+                        block_polygon=block_polygon,
+                        context_padding=context_padding,
+                        magi_context=magi_context,
+                    )
+                    assets_count += len(asset_paths)
+                    asset_block_count += 1
 
                 item = {
                     "schema_version": SCHEMA_VERSION,
@@ -123,14 +150,19 @@ def export_ocr_evidence(
                         "raw_text": text,
                         "confidence": block.get("confidence"),
                     },
+                    "page_metrics": page_metrics,
                     "geometry": build_geometry_features(block_box, block_polygon, image_size),
                     "magi_context": magi_context,
                     "visual_assets": asset_paths,
+                    "review": review,
                     "human_label": {
                         "status": "unreviewed",
                         "corrected_text": None,
                         "is_correct": None,
                         "error_type": None,
+                        "is_false_positive": None,
+                        "belongs_to_bubble": None,
+                        "group_id": None,
                         "notes": None,
                     },
                     "training_tags": build_training_tags(block, magi_context),
@@ -147,6 +179,7 @@ def export_ocr_evidence(
                     "page_key": page_key,
                     "block_count": page_block_count,
                     "magi_context_available": magi_page is not None,
+                    "page_metrics": build_page_metrics(comparison),
                 }
             )
 
@@ -164,7 +197,15 @@ def export_ocr_evidence(
             "correction_template": str(correction_template_path),
             "assets": str(assets_dir),
         },
+        "export_options": {
+            "dataset_name": dataset_name,
+            "image_root": str(image_root.expanduser().resolve()) if image_root else None,
+            "asset_policy": asset_policy,
+            "max_asset_blocks": max_asset_blocks,
+            "context_padding": context_padding,
+        },
         "stats": stats.to_dict(),
+        "review_summary": build_review_summary(evidence_path),
         "pages": per_page,
     }
     (output_dir / "evidence_index.json").write_text(
@@ -190,11 +231,58 @@ def build_comparison_path_map(ocr_report: dict[str, Any]) -> dict[str, dict[str,
     return mapping
 
 
+def build_comparison_page_map(ocr_report: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    mapping: dict[str, dict[str, Any]] = {}
+    for item in ocr_report.get("comparisons") or []:
+        comic_id = str(item.get("comic_id") or "unknown")
+        file_name = str(item.get("file_name") or Path(str(item.get("image_path") or "")).name)
+        if file_name:
+            mapping[build_page_key(comic_id, file_name)] = item
+    return mapping
+
+
 def match_comparison(
     ocr_page: dict[str, Any],
     comparisons_by_path: dict[str, dict[str, Any]],
+    comparisons_by_page_key: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
-    return comparisons_by_path.get(normalize_path_key(str(ocr_page.get("path") or "")))
+    path_match = comparisons_by_path.get(normalize_path_key(str(ocr_page.get("path") or "")))
+    if path_match:
+        return path_match
+    if comparisons_by_page_key:
+        path = Path(str(ocr_page.get("path") or ""))
+        inferred_comic = infer_comic_id(path, None)
+        page_key = build_page_key(inferred_comic, path.name)
+        return comparisons_by_page_key.get(page_key)
+    return None
+
+
+def resolve_ocr_image_path(
+    ocr_page: dict[str, Any],
+    comparison: dict[str, Any] | None,
+    image_root: Path | None,
+    dataset_name: str,
+) -> Path | None:
+    original_path = Path(str(ocr_page.get("path") or ""))
+    if original_path.exists():
+        return original_path
+    if comparison:
+        comparison_path = Path(str(comparison.get("image_path") or ""))
+        if comparison_path.exists():
+            return comparison_path
+    if image_root is None:
+        return None
+    root = image_root.expanduser().resolve()
+    comic_id = str((comparison or {}).get("comic_id") or infer_comic_id(original_path, comparison))
+    file_name = str((comparison or {}).get("file_name") or original_path.name)
+    candidates = [
+        root / comic_id / dataset_name / file_name,
+        root / comic_id / file_name,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
 
 
 def normalize_path_key(path: str) -> str:
@@ -427,6 +515,8 @@ def build_training_tags(block: dict[str, Any], magi_context: dict[str, Any]) -> 
         tags.append("no_magi_text_match")
     if magi_context.get("panel"):
         tags.append("inside_panel")
+    if looks_like_noise_text(text):
+        tags.append("noise_like_text")
     return tags
 
 
@@ -441,8 +531,142 @@ def build_correction_template(item: dict[str, Any]) -> dict[str, Any]:
         "corrected_text": item["ocr"]["raw_text"],
         "is_correct": None,
         "error_type": None,
+        "is_false_positive": None,
+        "belongs_to_bubble": None,
+        "group_id": None,
+        "review_priority": item.get("review", {}).get("priority"),
+        "review_flags": item.get("review", {}).get("flags", []),
+        "asset_hint": item.get("visual_assets", {}).get("overlay_crop"),
         "notes": None,
         "reviewer": None,
+    }
+
+
+def build_page_metrics(comparison: dict[str, Any] | None) -> dict[str, Any]:
+    if not comparison:
+        return {}
+    keys = [
+        "magi_text_regions",
+        "paddle_text_blocks",
+        "matched_regions",
+        "magi_only_regions",
+        "paddle_only_blocks",
+        "paddle_avg_confidence",
+        "paddle_elapsed_seconds",
+        "visual_path",
+    ]
+    return {key: comparison.get(key) for key in keys if key in comparison}
+
+
+def build_review_payload(
+    block: dict[str, Any],
+    block_box: BoundingBox,
+    magi_context: dict[str, Any],
+    page_metrics: dict[str, Any],
+) -> dict[str, Any]:
+    flags: list[str] = []
+    priority = 0
+    confidence = block.get("confidence")
+    text = str(block.get("text") or "").strip()
+    paddle_only_blocks = int(page_metrics.get("paddle_only_blocks") or 0)
+    magi_text_regions = int(page_metrics.get("magi_text_regions") or 0)
+
+    if isinstance(confidence, (int, float)) and confidence < 0.6:
+        flags.append("low_confidence_ocr")
+        priority += 30
+    if not magi_context.get("text_region"):
+        flags.append("outside_magi_text")
+        priority += 20
+    if paddle_only_blocks >= 40:
+        flags.append("page_many_paddle_only_blocks")
+        priority += 25
+    if magi_text_regions == 0 and isinstance(confidence, (int, float)) and confidence >= 0.85:
+        flags.append("magi_missed_text_candidate")
+        priority += 20
+    if looks_like_noise_text(text):
+        flags.append("noise_like_text")
+        priority += 35
+    if block_box.area < 120:
+        flags.append("tiny_text_box")
+        priority += 5
+    if len(text) <= 2:
+        flags.append("short_text")
+        priority += 5
+
+    return {
+        "priority": priority,
+        "flags": flags,
+        "recommended_action": recommend_action(flags),
+    }
+
+
+def recommend_action(flags: list[str]) -> str:
+    if "noise_like_text" in flags or "low_confidence_ocr" in flags:
+        return "review_false_positive"
+    if "magi_missed_text_candidate" in flags:
+        return "review_magi_missed_text"
+    if "outside_magi_text" in flags:
+        return "review_context"
+    return "spot_check"
+
+
+def looks_like_noise_text(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if len(stripped) <= 2:
+        return False
+    alpha = sum(char.isalpha() for char in stripped)
+    digits = sum(char.isdigit() for char in stripped)
+    symbols = len(stripped) - alpha - digits - sum(char.isspace() for char in stripped)
+    repeated = max((stripped.count(char) for char in set(stripped)), default=0)
+    alpha_ratio = alpha / max(1, len(stripped))
+    symbol_ratio = symbols / max(1, len(stripped))
+    return (
+        alpha_ratio < 0.35
+        or symbol_ratio > 0.45
+        or repeated / max(1, len(stripped)) > 0.65
+    )
+
+
+def should_export_assets(
+    asset_policy: str,
+    review: dict[str, Any],
+    assets_written_for_blocks: int,
+    max_asset_blocks: int | None,
+) -> bool:
+    if asset_policy == "none":
+        return False
+    if max_asset_blocks is not None and assets_written_for_blocks >= max_asset_blocks:
+        return False
+    if asset_policy == "all":
+        return True
+    if asset_policy == "priority":
+        return bool(review.get("flags")) or int(review.get("priority") or 0) > 0
+    raise ValueError(f"Unsupported asset policy: {asset_policy}")
+
+
+def build_review_summary(evidence_path: Path) -> dict[str, Any]:
+    from collections import Counter
+
+    flags: Counter[str] = Counter()
+    actions: Counter[str] = Counter()
+    priorities: list[int] = []
+    for line in evidence_path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        item = json.loads(line)
+        review = item.get("review") or {}
+        priorities.append(int(review.get("priority") or 0))
+        flags.update(review.get("flags") or [])
+        action = review.get("recommended_action")
+        if action:
+            actions[action] += 1
+    return {
+        "flag_counts": dict(flags.most_common()),
+        "recommended_action_counts": dict(actions.most_common()),
+        "max_priority": max(priorities) if priorities else 0,
+        "avg_priority": sum(priorities) / len(priorities) if priorities else 0.0,
     }
 
 

@@ -156,8 +156,7 @@ Las nuevas herramientas escriben salidas en este esquema:
 ```text
 outputs/
   packages/              # ZIPs/datasets preparados para Colab
-  cache/magi/            # cache de inferencias Magi
-  analysis/              # reportes sueltos locales
+  legacy/                # salidas historicas previas al esquema de runs
   runs/<run_name>/       # salida consolidada de una corrida
     manifest.json
     magi/
@@ -167,6 +166,11 @@ outputs/
     analysis/
       magi_analysis_report.json
       paddle_magi_ocr_comparison.json
+      ocr_evidence/
+        evidence.jsonl
+        correction_template.jsonl
+        evidence_index.json
+        assets/<comic_id>/<page>/
     visuals/
       magi_boxes/<comic_id>/  # paginas completas con cajas Magi
       ocr_boxes/<comic_id>/   # paginas completas con cajas PaddleOCR
@@ -176,8 +180,8 @@ La separacion por `comic_id` permite comparar visualmente dos comics sin mezclar
 paginas ni overlays. Los JSON tambien conservan `comic_id`, `file_name`,
 `page_id` y `path` para enlazar cada resultado visual con sus datos crudos.
 
-Los resultados historicos en `outputs/magi_debug/*` se consideran legado de
-pruebas. Para consolidarlos:
+Los resultados historicos sueltos se consideran legado de pruebas y deben quedar
+en `outputs/legacy/`. Para consolidar outputs antiguos descargados desde Colab:
 
 ```bash
 python -m tools.standardize_magi_outputs ^
@@ -220,20 +224,27 @@ geometria, contexto Magi y plantillas de correccion:
 
 ```bash
 python -m tools.export_ocr_evidence ^
-  --ocr-report outputs/runs/colab_clean_full/analysis/paddle_magi_ocr_comparison.json ^
+  --ocr-report outputs/runs/colab_clean_full_ocr_full/analysis/paddle_magi_ocr_comparison.json ^
   --magi-input outputs/runs/colab_clean_full/magi ^
-  --output-dir annotations/ocr_evidence
+  --image-root outputs/packages/magi_clean_full/by_comic ^
+  --dataset-name test_1_clean ^
+  --output-dir outputs/runs/colab_clean_full_ocr_full/analysis/ocr_evidence ^
+  --asset-policy priority ^
+  --max-asset-blocks 500
 ```
 
 Esto genera:
 
 ```text
-annotations/ocr_evidence/evidence.jsonl
-annotations/ocr_evidence/correction_template.jsonl
-annotations/ocr_evidence/evidence_index.json
-annotations/ocr_evidence/assets/<comic_id>/<page>/
+outputs/runs/<run_name>/analysis/ocr_evidence/evidence.jsonl
+outputs/runs/<run_name>/analysis/ocr_evidence/correction_template.jsonl
+outputs/runs/<run_name>/analysis/ocr_evidence/evidence_index.json
+outputs/runs/<run_name>/analysis/ocr_evidence/assets/<comic_id>/<page>/
 ```
 
-Cada registro conserva texto OCR crudo, confianza, poligono, crop del bloque,
-crop con contexto, crop de region Magi/panel cuando existe y un espacio para
-correccion humana posterior.
+Cada registro conserva texto OCR crudo, confianza, poligono, geometria normalizada,
+metricas de pagina, contexto Magi, prioridad de revision, tags de entrenamiento y
+un espacio para correccion humana posterior. La politica `priority` escribe JSONL
+para todos los bloques OCR, pero genera crops solo para los casos mas utiles de
+revisar: baja confianza, texto fuera de regiones Magi, posible ruido o paginas
+donde PaddleOCR detecta mucho mas texto que Magi.

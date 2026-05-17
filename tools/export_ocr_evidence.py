@@ -23,6 +23,15 @@ def parse_args() -> argparse.Namespace:
         help="Optional Magi output folder/ZIP for panel/text/character context.",
     )
     parser.add_argument(
+        "--image-root",
+        default=None,
+        help=(
+            "Optional local by_comic image root. Use this when the OCR report was "
+            "generated in Colab and its /content image paths do not exist locally."
+        ),
+    )
+    parser.add_argument("--dataset-name", default="test_1_clean")
+    parser.add_argument(
         "--output-dir",
         default="annotations/ocr_evidence",
         help="Directory where evidence.jsonl and assets will be written.",
@@ -44,6 +53,21 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional maximum OCR pages to export.",
     )
+    parser.add_argument(
+        "--asset-policy",
+        choices=["all", "priority", "none"],
+        default="priority",
+        help=(
+            "Which OCR blocks should get crop assets. JSONL evidence is still "
+            "written for every block. 'priority' keeps review-focused crops."
+        ),
+    )
+    parser.add_argument(
+        "--max-asset-blocks",
+        type=int,
+        default=500,
+        help="Maximum OCR blocks that receive crop assets. Use -1 for no limit.",
+    )
     return parser.parse_args()
 
 
@@ -61,9 +85,13 @@ def main() -> None:
         ocr_report=ocr_report,
         output_dir=Path(args.output_dir),
         magi_pages=magi_pages,
+        image_root=Path(args.image_root) if args.image_root else None,
+        dataset_name=args.dataset_name,
         include_empty_blocks=args.include_empty_blocks,
         context_padding=args.context_padding,
         limit_pages=args.limit_pages,
+        asset_policy=args.asset_policy,
+        max_asset_blocks=None if args.max_asset_blocks < 0 else args.max_asset_blocks,
     )
     print(json.dumps(index["stats"], indent=2, ensure_ascii=False))
     print(f"Wrote OCR evidence: {Path(args.output_dir).expanduser().resolve()}")

@@ -19,6 +19,12 @@ class OCRCorrection:
     corrected_text: str
     is_correct: bool | None = None
     error_type: str | None = None
+    is_false_positive: bool | None = None
+    belongs_to_bubble: bool | None = None
+    group_id: str | None = None
+    review_priority: int | None = None
+    review_flags: list[str] | None = None
+    asset_hint: str | None = None
     notes: str | None = None
     reviewer: str | None = None
 
@@ -33,6 +39,12 @@ class OCRCorrection:
             "corrected_text": self.corrected_text,
             "is_correct": self.is_correct,
             "error_type": self.error_type,
+            "is_false_positive": self.is_false_positive,
+            "belongs_to_bubble": self.belongs_to_bubble,
+            "group_id": self.group_id,
+            "review_priority": self.review_priority,
+            "review_flags": self.review_flags or [],
+            "asset_hint": self.asset_hint,
             "notes": self.notes,
             "reviewer": self.reviewer,
         }
@@ -66,6 +78,12 @@ def parse_correction(payload: dict[str, Any], line_number: int = 0) -> OCRCorrec
         corrected_text=str(payload["corrected_text"]),
         is_correct=payload.get("is_correct"),
         error_type=payload.get("error_type"),
+        is_false_positive=payload.get("is_false_positive"),
+        belongs_to_bubble=payload.get("belongs_to_bubble"),
+        group_id=payload.get("group_id"),
+        review_priority=payload.get("review_priority"),
+        review_flags=list(payload.get("review_flags") or []),
+        asset_hint=payload.get("asset_hint"),
         notes=payload.get("notes"),
         reviewer=payload.get("reviewer"),
     )
