@@ -139,15 +139,11 @@ robusta y postprocesamiento propio.
 
 Ver detalles en [PROJECT_ROADMAP.md](PROJECT_ROADMAP.md).
 
-Para probar Magi en Colab Free con GPU y una muestra pequena de paginas limpias,
-ver [COLAB_MAGI_QUICKTEST.md](COLAB_MAGI_QUICKTEST.md).
-
-Para correr el flujo completo Magi + reporte de calidad + comparacion
-PaddleOCR, abrir [notebooks/MAGI_ANALYSIS_COLAB.ipynb](notebooks/MAGI_ANALYSIS_COLAB.ipynb)
-en Colab.
-
-Si ya tienes resultados Magi y solo quieres probar OCR complementario, abrir
-[notebooks/OCR_COMPARISON_COLAB.ipynb](notebooks/OCR_COMPARISON_COLAB.ipynb).
+Para correr el flujo completo en Colab con GPU, abrir
+[notebooks/COMIC_ANALYSIS_COLAB.ipynb](notebooks/COMIC_ANALYSIS_COLAB.ipynb).
+Ese notebook es el flujo oficial unico: ejecuta Magi con detecciones + OCR propio,
+genera el reporte de calidad, corre PaddleOCR complementario, exporta evidencia
+OCR para calibracion y descarga un ZIP estandar del run.
 
 ## Estandar De Outputs
 

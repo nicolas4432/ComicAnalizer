@@ -2,12 +2,10 @@
 
 Esta guia corre una prueba corta de Magi con GPU gratuita de Colab, usando el codigo del proyecto desde GitHub y un ZIP pequeno de paginas limpias generado localmente.
 
-Para el flujo completo con reporte de calidad y comparacion PaddleOCR, abre
-`notebooks/MAGI_ANALYSIS_COLAB.ipynb` directamente en Colab. Esta guia queda
-como version rapida/manual.
-
-Para probar solo OCR complementario sobre resultados Magi ya existentes, abre
-`notebooks/OCR_COMPARISON_COLAB.ipynb`.
+Para el flujo completo con Magi, OCR propio de Magi, reporte de calidad,
+PaddleOCR complementario y evidencia OCR, abre
+`notebooks/COMIC_ANALYSIS_COLAB.ipynb` directamente en Colab. Esta guia queda
+como version historica rapida/manual para pruebas pequenas de Magi.
 
 La idea es probar primero deteccion sin OCR:
 

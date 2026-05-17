@@ -328,8 +328,7 @@ features/ocr_paddle.py
 tools/analyze_magi_results.py
 tools/compare_magi_paddleocr.py
 tools/standardize_magi_outputs.py
-notebooks/MAGI_ANALYSIS_COLAB.ipynb
-notebooks/OCR_COMPARISON_COLAB.ipynb
+notebooks/COMIC_ANALYSIS_COLAB.ipynb
 ```
 
 La salida de trabajo principal ahora usa una ruta estandar por corrida:
