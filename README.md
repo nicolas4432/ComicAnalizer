@@ -27,8 +27,14 @@ El proyecto ya tiene una base funcional:
   `anomalies`, `order` y `analysis`.
 - Exportacion de una carpeta con paginas copiadas y renombradas en el orden
   predicho.
-- Primera prueba experimental de Magi v3 para detectar paneles, textos,
-  personajes, asociaciones y OCR.
+- Integracion experimental estable de Magi v3 para detectar paneles, textos,
+  personajes, colas/asociaciones y OCR propio de Magi.
+- Comparacion complementaria con PaddleOCR.
+- Visualizaciones separadas por comic para:
+  - cajas Magi (`magi_boxes`)
+  - cajas PaddleOCR individuales (`ocr_boxes`)
+  - grupos OCR tipo frase/globo (`ocr_groups`)
+- Exportacion de evidencia OCR para futuras correcciones y entrenamiento.
 
 La limitacion principal actual es que el modelo entrenable aprende sobre
 embeddings CLIP de pagina completa. Esto sirve como base, pero todavia no
@@ -118,9 +124,31 @@ python -m models.evaluate ^
   --output outputs/learned_relation_ranking.json
 ```
 
-## Prueba Experimental Con Magi
+## Magi, PaddleOCR Y Evidencia OCR
 
-Se agrego una herramienta experimental para inspeccionar Magi v3:
+Se agrego una capa experimental para entender paginas de comic con herramientas
+externas y convertir sus salidas a estructuras auditables.
+
+Magi se usa como extractor estructural:
+
+- paneles
+- regiones de texto
+- personajes
+- colas de globos
+- asociaciones texto-personaje cuando estan disponibles
+- OCR propio de Magi
+
+PaddleOCR se usa como OCR complementario:
+
+- detecta bloques de texto independientes
+- permite comparar contra las regiones de texto de Magi
+- ayuda a encontrar texto que Magi no detecto
+
+El agrupador OCR combina PaddleOCR con el contexto de Magi para construir grupos
+tipo frase/globo. Esto no reemplaza una correccion humana, pero hace mucho mas
+facil comparar resultados visualmente.
+
+Para inspeccionar Magi localmente:
 
 ```bash
 python -m tools.inspect_magi_dataset ^
@@ -142,8 +170,9 @@ Ver detalles en [PROJECT_ROADMAP.md](PROJECT_ROADMAP.md).
 Para correr el flujo completo en Colab con GPU, abrir
 [notebooks/COMIC_ANALYSIS_COLAB.ipynb](notebooks/COMIC_ANALYSIS_COLAB.ipynb).
 Ese notebook es el flujo oficial unico: ejecuta Magi con detecciones + OCR propio,
-genera el reporte de calidad, corre PaddleOCR complementario, exporta evidencia
-OCR para calibracion y descarga un ZIP estandar del run.
+genera el reporte de calidad, corre PaddleOCR complementario, genera overlays
+`ocr_boxes` y `ocr_groups`, exporta evidencia OCR para calibracion y descarga un
+ZIP estandar del run.
 
 ## Estandar De Outputs
 
@@ -170,6 +199,7 @@ outputs/
     visuals/
       magi_boxes/<comic_id>/  # paginas completas con cajas Magi
       ocr_boxes/<comic_id>/   # paginas completas con cajas PaddleOCR
+      ocr_groups/<comic_id>/  # frases/globos agrupados con apoyo de Magi
 ```
 
 La separacion por `comic_id` permite comparar visualmente dos comics sin mezclar
@@ -207,6 +237,7 @@ python -m tools.compare_magi_paddleocr ^
   --selection random ^
   --limit 3 ^
   --visual-output-dir outputs/runs/ocr_sample/visuals/ocr_boxes ^
+  --grouped-visual-output-dir outputs/runs/ocr_sample/visuals/ocr_groups ^
   --output outputs/analysis/paddle_magi_ocr_comparison.json
 ```
 
@@ -244,3 +275,26 @@ un espacio para correccion humana posterior. La politica `priority` escribe JSON
 para todos los bloques OCR, pero genera crops solo para los casos mas utiles de
 revisar: baja confianza, texto fuera de regiones Magi, posible ruido o paginas
 donde PaddleOCR detecta mucho mas texto que Magi.
+
+## Estado De Trabajo Actual
+
+La base estable actual queda asi:
+
+1. El ordenamiento narrativo global con CLIP + modelo entrenable sigue siendo el
+   core de ordenamiento.
+2. Magi y PaddleOCR ahora son una capa de page understanding para construir
+   features estructurales.
+3. `ocr_boxes` permite revisar bloques detectados individualmente.
+4. `ocr_groups` permite revisar texto agrupado en frases/globos, lo que facilita
+   comparar Magi contra PaddleOCR.
+5. `ocr_evidence` deja preparado un dataset auditable para correcciones futuras.
+
+Mientras no se haga calibracion manual, los siguientes avances programables son:
+
+- mejorar reglas automaticas de agrupacion OCR;
+- detectar numeros de pagina y titulos repetidos;
+- clasificar pagina como portada, interior, creditos, anuncio o ruido;
+- generar embeddings por panel/crop;
+- agregar metricas automaticas de calidad por pagina y por comic;
+- crear un reporte HTML local para revisar overlays y evidencia sin abrir cada
+  imagen manualmente.

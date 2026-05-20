@@ -199,7 +199,7 @@ def draw_ocr_grouped_overlay(
     image = Image.open(image_path).convert("RGB")
     sidebar_font = load_font(size=max(18, image.width // 65), bold=False)
     sidebar_bold = load_font(size=max(20, image.width // 58), bold=True)
-    badge_font = load_font(size=max(12, image.width // 95), bold=True)
+    badge_font = load_font(size=max(14, image.width // 90), bold=True)
     line_height = max(30, sidebar_font.size + 12 if hasattr(sidebar_font, "size") else 30)
     header_height = 104
     sidebar_needed_height = header_height + max(1, len(groups)) * line_height * 2 + 32
@@ -210,14 +210,32 @@ def draw_ocr_grouped_overlay(
     draw = ImageDraw.Draw(canvas)
 
     for display_index, group in enumerate(groups, 1):
-        for block in group.blocks:
-            draw_ocr_block_outline(draw, block)
+        block_label_width = max(30, badge_font.size + 18 if hasattr(badge_font, "size") else 30)
+        display_box = expanded_group_box_for_blocks(
+            group.box,
+            image_size=image.size,
+            left_extra=block_label_width + 12,
+        )
+        group_badge_box = group_badge_outside_box(
+            display_box,
+            display_index=display_index,
+            font=badge_font,
+            draw=draw,
+            image_size=image.size,
+        )
         draw.rectangle(
-            (group.box.x1, group.box.y1, group.box.x2, group.box.y2),
+            (display_box.x1, display_box.y1, display_box.x2, display_box.y2),
             outline=OCR_GROUP_COLOR,
             width=5,
         )
-        draw_group_badge(draw, group.box, display_index, badge_font)
+        for block in group.blocks:
+            draw_ocr_block_outline_with_inline_number(
+                draw=draw,
+                block=block,
+                font=badge_font,
+                label_width=block_label_width,
+            )
+        draw_group_badge_inside(draw, group_badge_box, display_index, badge_font)
 
     sidebar_x = image.width
     draw.rectangle((sidebar_x, 0, canvas_width, canvas_height), fill=(248, 248, 248))
@@ -265,6 +283,33 @@ def draw_ocr_block_outline(draw: ImageDraw.ImageDraw, block: dict[str, Any]) -> 
     )
 
 
+def draw_ocr_block_outline_with_inline_number(
+    draw: ImageDraw.ImageDraw,
+    block: dict[str, Any],
+    font: ImageFont.ImageFont,
+    label_width: int,
+    padding: int = 4,
+) -> None:
+    box_payload = block.get("box") or {}
+    x1 = float(box_payload.get("x1", 0.0))
+    y1 = float(box_payload.get("y1", 0.0))
+    x2 = float(box_payload.get("x2", 0.0))
+    y2 = float(box_payload.get("y2", 0.0))
+    box_height = max(1.0, y2 - y1)
+    expanded_x1 = max(0.0, x1 - label_width)
+
+    draw.rectangle((expanded_x1, y1, x2, y2), outline=OCR_BOX_COLOR, width=3)
+    draw.line((x1, y1, x1, y2), fill=OCR_BOX_COLOR, width=2)
+
+    label = str(int(block.get("index") or 0) + 1)
+    text_box = draw.textbbox((0, 0), label, font=font)
+    text_width = text_box[2] - text_box[0]
+    text_height = text_box[3] - text_box[1]
+    text_x = expanded_x1 + max(2, (label_width - text_width) / 2)
+    text_y = y1 + max(0, (box_height - text_height) / 2) - 1
+    draw.text((text_x, text_y), label, fill=OCR_TEXT_COLOR, font=font)
+
+
 def draw_group_badge(
     draw: ImageDraw.ImageDraw,
     box: BoundingBox,
@@ -281,6 +326,64 @@ def draw_group_badge(
     draw.ellipse((x, y, x + diameter, y + diameter), fill=(120, 235, 170), outline=OCR_TEXT_COLOR, width=2)
     draw.text(
         (x + (diameter - text_width) / 2, y + (diameter - text_height) / 2 - 1),
+        label,
+        fill=OCR_TEXT_COLOR,
+        font=font,
+    )
+
+
+def expanded_group_box_for_blocks(
+    box: BoundingBox,
+    image_size: tuple[int, int],
+    left_extra: int,
+    padding: int = 8,
+) -> BoundingBox:
+    return BoundingBox(
+        x1=max(0.0, box.x1 - left_extra - padding),
+        y1=max(0.0, box.y1 - padding),
+        x2=min(float(image_size[0]), box.x2 + padding),
+        y2=min(float(image_size[1]), box.y2 + padding),
+    )
+
+
+def group_badge_outside_box(
+    box: BoundingBox,
+    display_index: int,
+    font: ImageFont.ImageFont,
+    draw: ImageDraw.ImageDraw,
+    image_size: tuple[int, int],
+    margin: int = 4,
+) -> tuple[float, float, float, float]:
+    label = f"{display_index:02d}"
+    label_box = draw.textbbox((0, 0), label, font=font)
+    text_width = label_box[2] - label_box[0]
+    text_height = label_box[3] - label_box[1]
+    diameter = max(24, max(text_width, text_height) + 12)
+    x1 = box.x1 - diameter - margin
+    y1 = box.y1 - diameter - margin
+    if x1 < margin:
+        x1 = box.x1 + margin
+    if y1 < margin:
+        y1 = box.y1 + margin
+    x1 = min(max(margin, x1), max(margin, image_size[0] - diameter - margin))
+    y1 = min(max(margin, y1), max(margin, image_size[1] - diameter - margin))
+    return (x1, y1, x1 + diameter, y1 + diameter)
+
+
+def draw_group_badge_inside(
+    draw: ImageDraw.ImageDraw,
+    badge_box: tuple[float, float, float, float],
+    display_index: int,
+    font: ImageFont.ImageFont,
+) -> None:
+    label = f"{display_index:02d}"
+    text_box = draw.textbbox((0, 0), label, font=font)
+    text_width = text_box[2] - text_box[0]
+    text_height = text_box[3] - text_box[1]
+    x1, y1, x2, y2 = badge_box
+    draw.ellipse((x1, y1, x2, y2), fill=OCR_BADGE_FILL, outline=OCR_TEXT_COLOR, width=3)
+    draw.text(
+        (x1 + ((x2 - x1) - text_width) / 2, y1 + ((y2 - y1) - text_height) / 2 - 1),
         label,
         fill=OCR_TEXT_COLOR,
         font=font,

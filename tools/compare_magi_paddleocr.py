@@ -12,7 +12,9 @@ from features.ocr_paddle import (
     PaddleOCRComplementaryExtractor,
     compare_magi_with_paddle,
 )
+from features.ocr_grouping import group_ocr_blocks
 from reports.box_visualization import (
+    draw_ocr_grouped_overlay,
     draw_paddle_ocr_readable_overlay_from_dict,
     visual_comic_dir,
     visual_page_name,
@@ -40,6 +42,14 @@ def parse_args() -> argparse.Namespace:
         "--visual-output-dir",
         default=None,
         help="Optional directory for PaddleOCR text box overlays.",
+    )
+    parser.add_argument(
+        "--grouped-visual-output-dir",
+        default=None,
+        help=(
+            "Optional directory for grouped OCR overlays. These use Magi text "
+            "regions when available and fall back to geometry grouping."
+        ),
     )
     parser.add_argument(
         "--limit",
@@ -102,6 +112,13 @@ def main() -> None:
     )
     if visual_output_dir:
         visual_output_dir.mkdir(parents=True, exist_ok=True)
+    grouped_visual_output_dir = (
+        Path(args.grouped_visual_output_dir).expanduser().resolve()
+        if args.grouped_visual_output_dir
+        else None
+    )
+    if grouped_visual_output_dir:
+        grouped_visual_output_dir.mkdir(parents=True, exist_ok=True)
 
     comparisons: list[dict[str, Any]] = []
     ocr_results: list[dict[str, Any]] = []
@@ -141,18 +158,39 @@ def main() -> None:
             iou_threshold=args.iou_threshold,
         )
         visual_path = None
+        grouped_visual_path = None
+        grouped_texts: list[dict[str, Any]] = []
         if visual_output_dir and not ocr_result.error:
             visual_path = visual_comic_dir(visual_output_dir, page.comic_id) / visual_page_name(
                 page.file_name,
                 "ocr_boxes",
             )
             draw_paddle_ocr_readable_overlay_from_dict(ocr_result.to_dict(), visual_path)
+        if grouped_visual_output_dir and not ocr_result.error:
+            groups = group_ocr_blocks(
+                ocr_page=ocr_result.to_dict(),
+                magi_page=page,
+                iou_threshold=args.iou_threshold,
+            )
+            grouped_texts = [group.to_dict() for group in groups]
+            grouped_visual_path = visual_comic_dir(
+                grouped_visual_output_dir,
+                page.comic_id,
+            ) / visual_page_name(page.file_name, "ocr_groups")
+            draw_ocr_grouped_overlay(
+                image_path=image_path,
+                groups=groups,
+                output_path=grouped_visual_path,
+            )
         comparisons.append(
             comparison.to_dict()
             | {
                 "image_path": str(image_path),
                 "paddle_text_preview": ocr_result.text[:500],
                 "visual_path": str(visual_path) if visual_path else None,
+                "grouped_visual_path": str(grouped_visual_path) if grouped_visual_path else None,
+                "ocr_group_count": len(grouped_texts),
+                "ocr_groups": grouped_texts,
             }
         )
         ocr_results.append(ocr_result.to_dict())
@@ -171,6 +209,7 @@ def main() -> None:
                 output.with_suffix(".partial.json"),
                 args=args,
                 visual_output_dir=visual_output_dir,
+                grouped_visual_output_dir=grouped_visual_output_dir,
                 comparisons=comparisons,
                 missing_images=missing_images,
                 ocr_results=ocr_results,
@@ -179,6 +218,7 @@ def main() -> None:
     report = build_report(
         args=args,
         visual_output_dir=visual_output_dir,
+        grouped_visual_output_dir=grouped_visual_output_dir,
         comparisons=comparisons,
         missing_images=missing_images,
         ocr_results=ocr_results,
@@ -191,6 +231,7 @@ def main() -> None:
 def build_report(
     args: argparse.Namespace,
     visual_output_dir: Path | None,
+    grouped_visual_output_dir: Path | None,
     comparisons: list[dict[str, Any]],
     missing_images: list[dict[str, str]],
     ocr_results: list[dict[str, Any]],
@@ -207,6 +248,9 @@ def build_report(
         "lang": args.lang,
         "use_angle_cls": args.use_angle_cls,
         "visual_output_dir": str(visual_output_dir) if visual_output_dir else None,
+        "grouped_visual_output_dir": str(grouped_visual_output_dir)
+        if grouped_visual_output_dir
+        else None,
         "summary": summarize_comparisons(comparisons, missing_images),
         "missing_images": missing_images,
         "comparisons": comparisons,
@@ -218,6 +262,7 @@ def write_report(
     output: Path,
     args: argparse.Namespace,
     visual_output_dir: Path | None,
+    grouped_visual_output_dir: Path | None,
     comparisons: list[dict[str, Any]],
     missing_images: list[dict[str, str]],
     ocr_results: list[dict[str, Any]],
@@ -225,6 +270,7 @@ def write_report(
     report = build_report(
         args=args,
         visual_output_dir=visual_output_dir,
+        grouped_visual_output_dir=grouped_visual_output_dir,
         comparisons=comparisons,
         missing_images=missing_images,
         ocr_results=ocr_results,
@@ -290,12 +336,14 @@ def summarize_comparisons(
     paddle_blocks = [item["paddle_text_blocks"] for item in comparisons]
     magi_regions = [item["magi_text_regions"] for item in comparisons]
     matched = [item["matched_regions"] for item in comparisons]
+    group_counts = [item.get("ocr_group_count", 0) for item in comparisons]
     return {
         "page_count": len(comparisons),
         "missing_image_count": len(missing_images),
         "avg_paddle_seconds": sum(elapsed) / len(elapsed),
         "max_paddle_seconds": max(elapsed),
         "avg_paddle_text_blocks": sum(paddle_blocks) / len(paddle_blocks),
+        "avg_ocr_group_count": sum(group_counts) / len(group_counts) if group_counts else 0.0,
         "avg_magi_text_regions": sum(magi_regions) / len(magi_regions),
         "avg_matched_regions": sum(matched) / len(matched),
         "pages_with_paddle_error": sum(1 for item in comparisons if item["paddle_error"]),

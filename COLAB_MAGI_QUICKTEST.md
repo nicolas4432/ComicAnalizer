@@ -7,6 +7,15 @@ PaddleOCR complementario y evidencia OCR, abre
 `notebooks/COMIC_ANALYSIS_COLAB.ipynb` directamente en Colab. Esta guia queda
 como version historica rapida/manual para pruebas pequenas de Magi.
 
+El notebook oficial tambien genera:
+
+```text
+visuals/magi_boxes/<comic_id>/
+visuals/ocr_boxes/<comic_id>/
+visuals/ocr_groups/<comic_id>/
+analysis/ocr_evidence/
+```
+
 La idea es probar primero deteccion sin OCR:
 
 - paneles
@@ -251,6 +260,7 @@ Para comparar una muestra con PaddleOCR:
   --lang en \
   --comic-id nekkorarekko \
   --visual-output-dir outputs/runs/$RUN_NAME/visuals/ocr_boxes \
+  --grouped-visual-output-dir outputs/runs/$RUN_NAME/visuals/ocr_groups \
   --output outputs/runs/$RUN_NAME/analysis/paddle_magi_ocr_comparison.json
 ```
 
@@ -258,6 +268,7 @@ Los overlays de OCR quedan en:
 
 ```text
 outputs/runs/nekkorarekko_clean/visuals/ocr_boxes/nekkorarekko/
+outputs/runs/nekkorarekko_clean/visuals/ocr_groups/nekkorarekko/
 ```
 
 Si quieres probar el flujo completo pero sin gastar toda la sesion de Colab,
@@ -342,6 +353,7 @@ files.download(zip_out)
 - `magi_results.json`: salida completa normalizada.
 - `visuals/magi_boxes/<comic>/*_magi_boxes.jpg`: cajas Magi por comic.
 - `visuals/ocr_boxes/<comic>/*_ocr_boxes.jpg`: cajas PaddleOCR por comic.
+- `visuals/ocr_groups/<comic>/*_ocr_groups.jpg`: frases/globos agrupados.
 - carpetas `001_*`, `002_*`: recortes de paneles detectados.
 
 Para calibrar Magi despues, usa estas salidas como evidencia: falsos negativos de personajes, globos sin cola, colas sin asociacion, paneles partidos o paneles fusionados.

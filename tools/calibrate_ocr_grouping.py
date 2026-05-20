@@ -16,6 +16,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--ocr-report", required=True)
     parser.add_argument("--magi-input", default=None)
+    parser.add_argument(
+        "--image-root",
+        default=None,
+        help="Optional local by_comic image root to remap Colab /content paths.",
+    )
+    parser.add_argument("--dataset-name", default="test_1_clean")
     parser.add_argument("--comic-id", required=True)
     parser.add_argument("--page-file", required=True)
     parser.add_argument(
@@ -33,6 +39,16 @@ def main() -> None:
     ocr_page = find_ocr_page(ocr_report, args.comic_id, args.page_file)
     if ocr_page is None:
         raise RuntimeError(f"OCR page not found: {args.comic_id}/{args.page_file}")
+    ocr_page = dict(ocr_page)
+    image_path = resolve_image_path(
+        ocr_page=ocr_page,
+        image_root=Path(args.image_root).expanduser() if args.image_root else None,
+        comic_id=args.comic_id,
+        page_file=args.page_file,
+        dataset_name=args.dataset_name,
+    )
+    if image_path:
+        ocr_page["path"] = str(image_path)
 
     magi_page = None
     if args.magi_input:
@@ -94,6 +110,29 @@ def find_ocr_page(
         path = str(page.get("path") or "").replace("\\", "/")
         if path.endswith(f"/{page_file}") and normalized_suffix in path:
             return page
+    return None
+
+
+def resolve_image_path(
+    ocr_page: dict[str, Any],
+    image_root: Path | None,
+    comic_id: str,
+    page_file: str,
+    dataset_name: str,
+) -> Path | None:
+    original = Path(str(ocr_page.get("path") or ""))
+    if original.exists():
+        return original
+    if image_root is None:
+        return None
+    root = image_root.expanduser().resolve()
+    candidates = [
+        root / comic_id / dataset_name / page_file,
+        root / comic_id / page_file,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
     return None
 
 
