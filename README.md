@@ -30,11 +30,15 @@ El proyecto ya tiene una base funcional:
 - Integracion experimental estable de Magi v3 para detectar paneles, textos,
   personajes, colas/asociaciones y OCR propio de Magi.
 - Comparacion complementaria con PaddleOCR.
+- Fusion OCR Magi/PaddleOCR para sugerir el mejor texto por region y marcar
+  desacuerdos automaticamente.
 - Visualizaciones separadas por comic para:
   - cajas Magi (`magi_boxes`)
   - cajas PaddleOCR individuales (`ocr_boxes`)
   - grupos OCR tipo frase/globo (`ocr_groups`)
 - Exportacion de evidencia OCR para futuras correcciones y entrenamiento.
+- Reporte HTML interactivo con seleccion de cajas, comparacion de alternativas
+  OCR, correcciones locales y exportacion de correcciones normalizables.
 
 La limitacion principal actual es que el modelo entrenable aprende sobre
 embeddings CLIP de pagina completa. Esto sirve como base, pero todavia no
@@ -148,6 +152,28 @@ El agrupador OCR combina PaddleOCR con el contexto de Magi para construir grupos
 tipo frase/globo. Esto no reemplaza una correccion humana, pero hace mucho mas
 facil comparar resultados visualmente.
 
+La fusion OCR compara:
+
+- OCR propio de Magi por region de texto.
+- Grupos generados desde PaddleOCR.
+- Confianza de PaddleOCR.
+- Limpieza del texto y desacuerdos entre herramientas.
+
+El resultado queda en `page_understanding_report.json` como `ocr_fusion` y en el
+reporte HTML como capa `Fusion`. Al seleccionar una caja, el panel lateral muestra
+la sugerencia del sistema, alternativas Magi/PaddleOCR y flags como
+`ocr_disagreement`, `possible_noise`, `missing_magi_text` o
+`missing_paddle_text`.
+
+Las correcciones descargadas desde el reporte se pueden normalizar para
+calibracion/entrenamiento:
+
+```bash
+python -m tools.normalize_review_corrections ^
+  --input "C:\Users\nico4\Downloads\comic_ocr_corrections.json" ^
+  --output-dir annotations/review_corrections
+```
+
 Para inspeccionar Magi localmente:
 
 ```bash
@@ -191,6 +217,8 @@ outputs/
     analysis/
       magi_analysis_report.json
       paddle_magi_ocr_comparison.json
+      page_understanding_report.json
+      # page_understanding_report.json incluye ocr_fusion por pagina
       ocr_evidence/
         evidence.jsonl
         correction_template.jsonl
@@ -200,6 +228,12 @@ outputs/
       magi_boxes/<comic_id>/  # paginas completas con cajas Magi
       ocr_boxes/<comic_id>/   # paginas completas con cajas PaddleOCR
       ocr_groups/<comic_id>/  # frases/globos agrupados con apoyo de Magi
+    report/
+      index.html              # reporte visual navegable del run
+annotations/
+  review_corrections/
+    review_corrections.jsonl
+    review_corrections_index.json
 ```
 
 La separacion por `comic_id` permite comparar visualmente dos comics sin mezclar
@@ -276,6 +310,44 @@ para todos los bloques OCR, pero genera crops solo para los casos mas utiles de
 revisar: baja confianza, texto fuera de regiones Magi, posible ruido o paginas
 donde PaddleOCR detecta mucho mas texto que Magi.
 
+## Page Understanding Y Reporte HTML
+
+Despues de tener una corrida con Magi y PaddleOCR, se puede generar una capa de
+analisis por pagina:
+
+```bash
+python -m tools.generate_run_report ^
+  --run-dir outputs/runs/colab_full_pipeline ^
+  --image-root outputs/packages/magi_clean_full/by_comic ^
+  --dataset-name test_1_clean
+```
+
+Esto crea:
+
+```text
+outputs/runs/<run_name>/analysis/page_understanding_report.json
+outputs/runs/<run_name>/report/index.html
+```
+
+El reporte JSON agrega:
+
+- candidatos de numeracion de pagina detectados por OCR;
+- clasificacion heuristica de tipo de pagina:
+  - `cover_or_title`
+  - `interior_story`
+  - `credits`
+  - `ad_or_social`
+  - `text_heavy`
+  - `noise_or_blank`
+  - `unknown`
+- conteos Magi;
+- resumen OCR;
+- rutas a `magi_boxes`, `ocr_boxes` y `ocr_groups`.
+
+El HTML permite revisar una corrida completa desde un solo archivo visual. Es el
+punto de revision recomendado antes de calibracion manual, porque deja juntas
+las tres vistas: Magi, PaddleOCR individual y PaddleOCR agrupado.
+
 ## Estado De Trabajo Actual
 
 La base estable actual queda asi:
@@ -296,5 +368,5 @@ Mientras no se haga calibracion manual, los siguientes avances programables son:
 - clasificar pagina como portada, interior, creditos, anuncio o ruido;
 - generar embeddings por panel/crop;
 - agregar metricas automaticas de calidad por pagina y por comic;
-- crear un reporte HTML local para revisar overlays y evidencia sin abrir cada
-  imagen manualmente.
+- mejorar el reporte HTML para agregar filtros por tipo de pagina, sospecha y
+  diferencia Magi/PaddleOCR.

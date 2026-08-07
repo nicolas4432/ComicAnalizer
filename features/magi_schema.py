@@ -90,6 +90,8 @@ class MagiPageAnalysis:
     text_character_associations: list[MagiAssociation] = field(default_factory=list)
     text_tail_associations: list[MagiAssociation] = field(default_factory=list)
     is_essential_text: list[bool] = field(default_factory=list)
+    ocr_texts: list[str] = field(default_factory=list)
+    ocr_bboxes: list[BoundingBox] = field(default_factory=list)
     raw_counts: dict[str, int] = field(default_factory=dict)
 
     @property
@@ -121,6 +123,7 @@ class MagiPageAnalysis:
             "counts": {
                 "panels": self.panel_count,
                 "texts": self.text_count,
+                "magi_ocr_texts": len(self.ocr_texts),
                 "characters": self.character_count,
                 "tails": self.tail_count,
                 "text_character_associations": len(self.text_character_associations),
@@ -128,6 +131,8 @@ class MagiPageAnalysis:
             },
             "character_cluster_labels": self.character_cluster_labels,
             "is_essential_text": self.is_essential_text,
+            "ocr_texts": self.ocr_texts,
+            "ocr_bboxes": [item.to_dict() for item in self.ocr_bboxes],
             "text_character_associations": [
                 item.to_dict() for item in self.text_character_associations
             ],
@@ -160,6 +165,13 @@ def normalize_magi_page(
         int(item) for item in detections.get("character_cluster_labels") or []
     ]
     is_essential_text = [bool(item) for item in detections.get("is_essential_text") or []]
+    ocr = result.get("ocr") or {}
+    ocr_texts = [str(item) for item in ocr.get("ocr_texts") or []]
+    ocr_bboxes = [
+        box
+        for box in (coerce_box(item) for item in (ocr.get("bboxes") or []))
+        if box is not None
+    ]
 
     characters = build_regions(
         "character",
@@ -174,10 +186,11 @@ def normalize_magi_page(
         "text",
         detections.get("texts"),
         page_id,
-        extra_by_index={
-            idx: {"is_essential": is_essential}
-            for idx, is_essential in enumerate(is_essential_text)
-        },
+        extra_by_index=build_text_attributes(
+            is_essential_text=is_essential_text,
+            ocr_texts=ocr_texts,
+            ocr_bboxes=ocr_bboxes,
+        ),
     )
     panels = build_regions("panel", detections.get("panels"), page_id)
     tails = build_regions("tail", detections.get("tails"), page_id)
@@ -209,10 +222,32 @@ def normalize_magi_page(
             target_prefix=f"{page_id}:tail",
         ),
         is_essential_text=is_essential_text,
+        ocr_texts=ocr_texts,
+        ocr_bboxes=ocr_bboxes,
         raw_counts={
             key: len(value) for key, value in detections.items() if isinstance(value, list)
         },
     )
+
+
+def build_text_attributes(
+    is_essential_text: list[bool],
+    ocr_texts: list[str],
+    ocr_bboxes: list[BoundingBox],
+) -> dict[int, dict[str, Any]]:
+    max_len = max(len(is_essential_text), len(ocr_texts), len(ocr_bboxes))
+    attributes: dict[int, dict[str, Any]] = {}
+    for idx in range(max_len):
+        item: dict[str, Any] = {}
+        if idx < len(is_essential_text):
+            item["is_essential"] = is_essential_text[idx]
+        if idx < len(ocr_texts):
+            item["ocr_text"] = ocr_texts[idx]
+        if idx < len(ocr_bboxes):
+            item["ocr_box"] = ocr_bboxes[idx].to_dict()
+        if item:
+            attributes[idx] = item
+    return attributes
 
 
 def build_regions(

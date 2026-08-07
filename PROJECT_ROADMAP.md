@@ -52,6 +52,10 @@ El proyecto actual ya resuelve la arquitectura base:
   - `ocr_boxes`
   - `ocr_groups`
 - Evidencia OCR auditable para futuras correcciones y entrenamiento.
+- Fusion OCR Magi/PaddleOCR con sugerencias por region, alternativas y flags de
+  desacuerdo.
+- Reporte interactivo para revisar cajas, comparar OCRs, guardar correcciones y
+  convertirlas en JSONL de calibracion.
 
 ### Limitacion Principal
 
@@ -108,6 +112,8 @@ PageFeatures:
   characters[]
   character_clusters[]
   text_character_associations[]
+  ocr_fusion[]
+  correction_evidence[]
   ocr_text
   layout_graph
 ```
@@ -163,6 +169,18 @@ Rol recomendado:
 - Comparacion con Magi OCR para robustez.
 
 No asocia texto con personajes por si solo.
+
+### Fusion OCR Propia
+
+Rol recomendado:
+
+- Comparar Magi OCR contra PaddleOCR agrupado.
+- Elegir una sugerencia textual inicial.
+- Detectar desacuerdos y posibles falsos positivos.
+- Guardar alternativas para correccion humana y entrenamiento posterior.
+
+La fusion no reemplaza una revision humana: produce candidatos y flags para que
+la calibracion sea mas rapida y trazable.
 
 ### Manga OCR
 
@@ -380,6 +398,8 @@ outputs/runs/<run_name>/visuals/magi_boxes/<comic_id>/
 outputs/runs/<run_name>/visuals/ocr_boxes/<comic_id>/
 outputs/runs/<run_name>/visuals/ocr_groups/<comic_id>/
 outputs/runs/<run_name>/analysis/ocr_evidence/
+outputs/runs/<run_name>/analysis/page_understanding_report.json
+outputs/runs/<run_name>/report/index.html
 ```
 
 Los overlays visuales se guardan separados por comic para revisar resultados
@@ -466,19 +486,49 @@ Orden recomendado:
    - zonas de borde inferior/superior
    - OCR filtrado por regex numerica
    - confianza y posicion
-4. Agregar detector de titulos repetidos:
-   - texto OCR frecuente por comic
-   - posicion estable en pagina
-   - similitud textual
-5. Agregar clasificador heuristico de tipo de pagina:
+4. Agregar clasificador heuristico de tipo de pagina:
    - portada
    - interior
    - creditos
    - anuncio/ruido
+5. Agregar detector de titulos repetidos:
+   - texto OCR frecuente por comic
+   - posicion estable en pagina
+   - similitud textual
 6. Crear `features/panel_embeddings.py` para embeddings por panel cuando haya
    paneles detectados por Magi u otro detector.
 7. Empezar a alimentar el modelo de transicion con features estructurales, no
    solo CLIP global.
+
+Estado de los puntos 1-4:
+
+```text
+Implementado como primera version programable.
+```
+
+Archivos principales:
+
+```text
+features/page_numbers.py
+features/page_type.py
+tools/generate_run_report.py
+notebooks/COMIC_ANALYSIS_COLAB.ipynb
+```
+
+Limitaciones actuales:
+
+- La numeracion de pagina es heuristica y puede confundir numeros de dialogo o
+  efectos visuales con numeros reales.
+- El tipo de pagina es una clasificacion inicial basada en conteos Magi, OCR y
+  palabras clave, no un modelo entrenado.
+- El HTML es una vista de inspeccion; todavia no incluye filtros interactivos ni
+  correccion manual integrada.
+
+Siguiente avance programable recomendado:
+
+```text
+detector de titulos repetidos + filtros interactivos en el HTML
+```
 
 ## Decision Tecnica Actual
 

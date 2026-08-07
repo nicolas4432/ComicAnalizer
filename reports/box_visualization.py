@@ -20,16 +20,24 @@ class OverlayBox:
 
 
 MAGI_COLORS = {
-    "panel": "lime",
-    "text": "dodgerblue",
-    "character": "red",
-    "tail": "magenta",
+    "panel": (40, 190, 95),
+    "text": (30, 120, 240),
+    "character": (230, 65, 65),
+    "tail": (190, 75, 210),
+}
+MAGI_LABELS = {
+    "panel": "Panel",
+    "text": "Texto Magi",
+    "character": "Personaje",
+    "tail": "Cola globo",
 }
 OCR_COLOR = "orange"
 OCR_BOX_COLOR = (255, 184, 28)
 OCR_BADGE_FILL = (255, 214, 70)
 OCR_TEXT_COLOR = (0, 0, 0)
 OCR_GROUP_COLOR = (0, 170, 90)
+SIDEBAR_BG = (248, 249, 250)
+SIDEBAR_BORDER = (210, 216, 222)
 
 
 def draw_overlay(
@@ -65,28 +73,73 @@ def draw_magi_overlay(
     include_characters: bool = True,
     include_tails: bool = True,
 ) -> None:
-    boxes: list[OverlayBox] = []
+    image = Image.open(image_path).convert("RGB")
+    sidebar_width = 620
+    sidebar_font = load_font(size=max(17, image.width // 68), bold=False)
+    sidebar_bold = load_font(size=max(20, image.width // 58), bold=True)
+    badge_font = load_font(size=max(13, image.width // 92), bold=True)
+    line_height = max(28, sidebar_font.size + 9 if hasattr(sidebar_font, "size") else 28)
+
+    regions: list[tuple[str, Any]] = []
     if include_panels:
-        boxes.extend(
-            OverlayBox(f"panel:{item.index}", item.box, MAGI_COLORS["panel"])
-            for item in page.panels
-        )
+        regions.extend(("panel", item) for item in page.panels)
     if include_texts:
-        boxes.extend(
-            OverlayBox(f"text:{item.index}", item.box, MAGI_COLORS["text"])
-            for item in page.texts
-        )
+        regions.extend(("text", item) for item in page.texts)
     if include_characters:
-        boxes.extend(
-            OverlayBox(f"char:{item.index}", item.box, MAGI_COLORS["character"])
-            for item in page.characters
-        )
+        regions.extend(("character", item) for item in page.characters)
     if include_tails:
-        boxes.extend(
-            OverlayBox(f"tail:{item.index}", item.box, MAGI_COLORS["tail"])
-            for item in page.tails
+        regions.extend(("tail", item) for item in page.tails)
+
+    header_height = 220
+    sidebar_needed_height = header_height + max(1, len(regions)) * line_height + 36
+    canvas_height = max(image.height, sidebar_needed_height)
+    canvas_width = image.width + sidebar_width
+    canvas = Image.new("RGB", (canvas_width, canvas_height), "white")
+    canvas.paste(image, (0, 0))
+    draw = ImageDraw.Draw(canvas)
+
+    for kind, region in regions:
+        color = MAGI_COLORS[kind]
+        draw.rectangle(
+            (region.box.x1, region.box.y1, region.box.x2, region.box.y2),
+            outline=color,
+            width=5,
         )
-    draw_overlay(image_path=image_path, output_path=output_path, boxes=boxes)
+        draw_detection_badge(
+            draw=draw,
+            box=region.box,
+            label=str(region.index + 1),
+            font=badge_font,
+            color=color,
+            image_size=image.size,
+        )
+
+    sidebar_x = image.width
+    draw_sidebar_base(draw, sidebar_x, canvas_width, canvas_height)
+    draw.text((sidebar_x + 24, 22), "Magi detections", fill=OCR_TEXT_COLOR, font=sidebar_bold)
+    draw.text(
+        (sidebar_x + 24, 56),
+        "Cajas detectadas por tipo y numero",
+        fill=(70, 76, 84),
+        font=sidebar_font,
+    )
+    y = 92
+    for kind in ("panel", "text", "character", "tail"):
+        color = MAGI_COLORS[kind]
+        label = MAGI_LABELS[kind]
+        count = sum(1 for item_kind, _ in regions if item_kind == kind)
+        draw_legend_chip(draw, sidebar_x + 24, y, color, f"{label}: {count}", sidebar_font)
+        y += line_height
+    y += 10
+    for kind, region in regions:
+        color = MAGI_COLORS[kind]
+        label = f"{MAGI_LABELS[kind]} {region.index + 1:02d}"
+        draw_legend_chip(draw, sidebar_x + 24, y, color, label, sidebar_font)
+        y += line_height
+
+    target = Path(output_path).expanduser().resolve()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(target)
 
 
 def draw_paddle_ocr_overlay(
@@ -165,17 +218,17 @@ def draw_paddle_ocr_readable_overlay_from_dict(
         )
 
     sidebar_x = image.width
-    draw.rectangle((sidebar_x, 0, canvas_width, canvas_height), fill=(248, 248, 248))
-    draw.line((sidebar_x, 0, sidebar_x, canvas_height), fill=(210, 210, 210), width=3)
+    draw_sidebar_base(draw, sidebar_x, canvas_width, canvas_height)
     draw.text((sidebar_x + 24, 24), "PaddleOCR blocks", fill=OCR_TEXT_COLOR, font=sidebar_bold)
     draw.text(
         (sidebar_x + 24, 56),
-        f"{len(blocks)} bloques detectados",
+        f"{len(blocks)} bloques detectados individualmente",
         fill=(70, 70, 70),
         font=sidebar_font,
     )
+    draw_legend_chip(draw, sidebar_x + 24, 86, OCR_BOX_COLOR, "Bloque OCR + numero", sidebar_font)
 
-    y = header_height
+    y = header_height + 18
     for display_index, block in enumerate(blocks, 1):
         text = block.get("text", "").strip()
         confidence = block.get("confidence")
@@ -238,17 +291,18 @@ def draw_ocr_grouped_overlay(
         draw_group_badge_inside(draw, group_badge_box, display_index, badge_font)
 
     sidebar_x = image.width
-    draw.rectangle((sidebar_x, 0, canvas_width, canvas_height), fill=(248, 248, 248))
-    draw.line((sidebar_x, 0, sidebar_x, canvas_height), fill=(210, 210, 210), width=3)
+    draw_sidebar_base(draw, sidebar_x, canvas_width, canvas_height)
     draw.text((sidebar_x + 24, 24), "OCR grouped bubbles", fill=OCR_TEXT_COLOR, font=sidebar_bold)
     draw.text(
         (sidebar_x + 24, 58),
-        f"{len(groups)} grupos calibrados",
+        f"{len(groups)} grupos de frase/globo",
         fill=(70, 70, 70),
         font=sidebar_font,
     )
+    draw_legend_chip(draw, sidebar_x + 24, 88, OCR_GROUP_COLOR, "Grupo OCR", sidebar_font)
+    draw_legend_chip(draw, sidebar_x + 220, 88, OCR_BOX_COLOR, "Bloque OCR", sidebar_font)
 
-    y = header_height
+    y = header_height + 20
     for display_index, group in enumerate(groups, 1):
         confidence = f"{group.confidence:.2f}" if group.confidence is not None else "--"
         block_ids = ",".join(str(index) for index in group.block_indices)
@@ -308,6 +362,60 @@ def draw_ocr_block_outline_with_inline_number(
     text_x = expanded_x1 + max(2, (label_width - text_width) / 2)
     text_y = y1 + max(0, (box_height - text_height) / 2) - 1
     draw.text((text_x, text_y), label, fill=OCR_TEXT_COLOR, font=font)
+
+
+def draw_detection_badge(
+    draw: ImageDraw.ImageDraw,
+    box: BoundingBox,
+    label: str,
+    font: ImageFont.ImageFont,
+    color: tuple[int, int, int],
+    image_size: tuple[int, int],
+) -> None:
+    text_box = draw.textbbox((0, 0), label, font=font)
+    text_width = text_box[2] - text_box[0]
+    text_height = text_box[3] - text_box[1]
+    diameter = max(22, max(text_width, text_height) + 12)
+    x1, y1 = choose_badge_position(
+        x1=box.x1,
+        y1=box.y1,
+        x2=box.x2,
+        y2=box.y2,
+        diameter=diameter,
+        polygon_points=None,
+        image_size=image_size,
+        margin=3,
+    )
+    draw.ellipse((x1, y1, x1 + diameter, y1 + diameter), fill=color, outline=OCR_TEXT_COLOR, width=2)
+    draw.text(
+        (x1 + (diameter - text_width) / 2, y1 + (diameter - text_height) / 2 - 1),
+        label,
+        fill=(255, 255, 255),
+        font=font,
+    )
+
+
+def draw_sidebar_base(
+    draw: ImageDraw.ImageDraw,
+    sidebar_x: int,
+    canvas_width: int,
+    canvas_height: int,
+) -> None:
+    draw.rectangle((sidebar_x, 0, canvas_width, canvas_height), fill=SIDEBAR_BG)
+    draw.line((sidebar_x, 0, sidebar_x, canvas_height), fill=SIDEBAR_BORDER, width=3)
+
+
+def draw_legend_chip(
+    draw: ImageDraw.ImageDraw,
+    x: int,
+    y: int,
+    color: tuple[int, int, int],
+    text: str,
+    font: ImageFont.ImageFont,
+) -> None:
+    size = max(14, getattr(font, "size", 14))
+    draw.rounded_rectangle((x, y + 4, x + size, y + 4 + size), radius=4, fill=color, outline=OCR_TEXT_COLOR, width=1)
+    draw.text((x + size + 10, y), text[:58], fill=OCR_TEXT_COLOR, font=font)
 
 
 def draw_group_badge(

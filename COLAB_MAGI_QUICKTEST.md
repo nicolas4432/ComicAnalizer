@@ -14,6 +14,8 @@ visuals/magi_boxes/<comic_id>/
 visuals/ocr_boxes/<comic_id>/
 visuals/ocr_groups/<comic_id>/
 analysis/ocr_evidence/
+analysis/page_understanding_report.json
+report/index.html
 ```
 
 La idea es probar primero deteccion sin OCR:
@@ -354,6 +356,8 @@ files.download(zip_out)
 - `visuals/magi_boxes/<comic>/*_magi_boxes.jpg`: cajas Magi por comic.
 - `visuals/ocr_boxes/<comic>/*_ocr_boxes.jpg`: cajas PaddleOCR por comic.
 - `visuals/ocr_groups/<comic>/*_ocr_groups.jpg`: frases/globos agrupados.
+- `analysis/page_understanding_report.json`: numeracion candidata y tipo de pagina.
+- `report/index.html`: reporte visual navegable del run.
 - carpetas `001_*`, `002_*`: recortes de paneles detectados.
 
 Para calibrar Magi despues, usa estas salidas como evidencia: falsos negativos de personajes, globos sin cola, colas sin asociacion, paneles partidos o paneles fusionados.
